@@ -1,0 +1,24 @@
+model Payment {
+    id            String        @id @default(uuid())
+    sellerId      String
+    sellerPlanId  String? // plan purchased
+    type          PaymentType
+    amount        Float
+    status        PaymentStatus @default(PENDING)
+    paymentMethod String? // "Stripe", "SSLCommerz", "bKash", etc.
+    gatewayTxnId  String?       @unique // transaction id from the gateway
+    currency      String        @default("BDT")
+    description   String?
+    metadata      Json? // store gateway response
+    failureReason String?
+    completedAt   DateTime?
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @updatedAt
+    seller        Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+    sellerPlan    SellerPlan?   @relation(fields: [sellerPlanId], references: [id], onDelete: SetNull)
+
+    @@index([sellerId])
+    @@index([status, createdAt])
+    @@index([gatewayTxnId])
+    @@map("payments")
+}

@@ -1,0 +1,17 @@
+model Attachment {
+    id         String         @id @default(uuid())
+    url        String
+    fileName   String?
+    fileSize   Int? // in bytes
+    mimeType   String?
+    type       AttachmentType
+    requestId  String?
+    responseId String?
+    createdAt  DateTime       @default(now())
+    request    Request?       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+    response   Response?      @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+    @@index([requestId])
+    @@index([responseId])
+    @@map("attachments")
+}

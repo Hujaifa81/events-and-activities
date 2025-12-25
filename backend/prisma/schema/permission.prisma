@@ -1,0 +1,24 @@
+model Permission {
+    id               String            @id @default(uuid())
+    name             String            @unique
+    description      String?
+    category         String? // e.g., "user_management", "content_moderation"
+    adminPermissions AdminPermission[]
+
+    @@index([category])
+    @@map("permissions")
+}
+
+model AdminPermission {
+    id           String     @id @default(uuid())
+    adminId      String
+    permissionId String
+    createdAt    DateTime   @default(now())
+    admin        Admin      @relation(fields: [adminId], references: [id], onDelete: Cascade)
+    permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+    @@unique([adminId, permissionId])
+    @@index([adminId])
+    @@index([permissionId])
+    @@map("admin_permissions")
+}

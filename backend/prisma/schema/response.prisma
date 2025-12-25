@@ -1,0 +1,18 @@
+model Response {
+    id          String       @id @default(uuid())
+    requestId   String
+    sellerId    String
+    message     String?
+    price       Float?
+    isViewed    Boolean      @default(false)
+    createdAt   DateTime     @default(now())
+    request     Request      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+    seller      Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+    attachments Attachment[]
+    rating      Rating?
+
+    @@index([requestId])
+    @@index([sellerId])
+    @@index([createdAt])
+    @@map("responses")
+}

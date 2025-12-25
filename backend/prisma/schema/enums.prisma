@@ -1,0 +1,53 @@
+enum UserRole {
+  USER
+  SELLER
+  ADMIN
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+}
+
+enum RequestStatus {
+  OPEN
+  RESPONDED
+  CLOSED
+}
+
+enum SellerPlanType {
+  SUBSCRIPTION
+  PAY_PER_RESPONSE
+}
+
+enum SellerCreditStatus {
+  ACTIVE
+  EXPIRED
+  USED_UP
+}
+
+enum PaymentType {
+  BUY_CREDITS
+  SUBSCRIPTION
+  REFUND
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum NotificationType {
+  SYSTEM
+  USER
+  SELLER
+  PROMOTION
+}
+
+
+enum AttachmentType {
+  IMAGE
+  PDF
+}

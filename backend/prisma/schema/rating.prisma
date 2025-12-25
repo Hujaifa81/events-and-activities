@@ -1,0 +1,14 @@
+model Rating {
+    id         String   @id @default(uuid())
+    responseId String   @unique
+    response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+    customerId String
+    customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+    rating     Int // 1–5
+    comment    String?
+    createdAt  DateTime @default(now())
+
+    @@index([customerId])
+    @@index([rating])
+    @@map("ratings")
+}

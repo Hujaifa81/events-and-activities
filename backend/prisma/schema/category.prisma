@@ -1,0 +1,30 @@
+model Category {
+    id          String           @id @default(uuid())
+    name        String           @unique
+    slug        String           @unique
+    description String?
+    icon        String?
+    isActive    Boolean          @default(true)
+    createdAt   DateTime         @default(now())
+    updatedAt   DateTime         @updatedAt
+    requests    Request[]
+    sellers     SellerCategory[]
+
+    @@index([slug])
+    @@index([isActive])
+    @@map("categories")
+}
+
+model SellerCategory {
+    id         String   @id @default(uuid())
+    sellerId   String
+    categoryId String
+    createdAt  DateTime @default(now())
+    seller     Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+    category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+    @@unique([sellerId, categoryId])
+    @@index([sellerId])
+    @@index([categoryId])
+    @@map("seller_categories")
+}

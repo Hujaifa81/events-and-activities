@@ -1,0 +1,41 @@
+model SellerPlan {
+    id            String         @id @default(uuid())
+    type          SellerPlanType
+    name          String         @unique
+    description   String?
+    responseLimit Int
+    price         Float
+    durationDays  Int? // for subscription
+    active        Boolean        @default(true)
+    createdAt     DateTime       @default(now())
+    updatedAt     DateTime       @updatedAt
+    credits       SellerCredit[]
+    payments      Payment[]
+    sellers       Seller[]
+
+    @@index([type, active])
+    @@map("seller_plans")
+}
+
+model SellerCredit {
+    id               String             @id @default(uuid())
+    sellerId         String
+    sellerPlanId     String? // purchased plan reference
+    totalCredits     Int                @default(0)
+    usedCredits      Int                @default(0)
+    availableCredits Int                @default(0) // computed: totalCredits - usedCredits
+    startDate        DateTime? // subscription start
+    endDate          DateTime? // subscription end
+    status           SellerCreditStatus @default(ACTIVE)
+    autoRenew        Boolean            @default(false)
+    createdAt        DateTime           @default(now())
+    updatedAt        DateTime           @updatedAt
+
+    seller     Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+    sellerPlan SellerPlan? @relation(fields: [sellerPlanId], references: [id], onDelete: SetNull)
+
+    @@unique([sellerId, status])
+    @@index([sellerId, status])
+    @@index([endDate, status])
+    @@map("seller_credits")
+}

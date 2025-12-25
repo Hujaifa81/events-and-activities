@@ -1,0 +1,73 @@
+model User {
+  id              String         @id @default(uuid())
+  name            String
+  email           String         @unique
+  password        String
+  role            UserRole       @default(USER)
+  isActive        Boolean        @default(true)
+  isBlocked       Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  customerProfile Customer?
+  sellerProfile   Seller?
+  adminProfile    Admin?
+  notifications   Notification[]
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive, isBlocked])
+  @@map("users")
+}
+
+model Customer {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location  String?
+  interests String[]
+  requests  Request[]
+  ratings   Rating[]
+
+  @@index([userId])
+  @@map("customers")
+}
+
+model Seller {
+  id              String           @id @default(uuid())
+  userId          String           @unique
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeName       String
+  storeUrl        String?
+  contactNumber   String?
+  whatsappNumber  String?
+  facebookPageUrl String?
+  currentPlanId   String?
+  interests       String[]
+  isVerified      Boolean          @default(false)
+  isSuspended     Boolean          @default(false)
+  averageRating   Float?           @default(0)
+  totalResponses  Int              @default(0)
+  responses       Response[]
+  sellerCredits   SellerCredit[]
+  payments        Payment[]
+  categories      SellerCategory[]
+  currentPlan     SellerPlan?      @relation(fields: [currentPlanId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([isVerified, isSuspended])
+  @@index([averageRating])
+  @@map("sellers")
+}
+
+model Admin {
+  id          String            @id @default(uuid())
+  userId      String            @unique
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminRole   AdminRole
+  permissions AdminPermission[]
+  auditLogs   AdminAuditLog[]
+
+  @@index([userId])
+  @@index([adminRole])
+  @@map("admins")
+}
