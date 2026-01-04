@@ -1,73 +1,355 @@
-model User {
-  id              String         @id @default(uuid())
-  name            String
-  email           String         @unique
-  password        String
-  role            UserRole       @default(USER)
-  isActive        Boolean        @default(true)
-  isBlocked       Boolean        @default(false)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  customerProfile Customer?
-  sellerProfile   Seller?
-  adminProfile    Admin?
-  notifications   Notification[]
+// ============================================
+// USER MANAGEMENT SCHEMAS
+// ============================================
 
+// Core User Model with Authentication
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  username  String     @unique
+  password  String // Hashed password
+  role      UserRole   @default(USER)
+  status    UserStatus @default(PENDING_VERIFICATION)
+  
+  // Profile relationship
+  profile   Profile?
+  
+  // Verification
+  emailVerified     Boolean       @default(false)
+  phoneVerified     Boolean       @default(false)
+  isVerified        Boolean       @default(false) // Overall verification status
+  verifications     Verification[]
+  
+  // Security
+  twoFactorEnabled  Boolean       @default(false)
+  twoFactorSecret   String?
+  refreshTokens     RefreshToken[]
+  loginHistory      LoginHistory[]
+  
+  // Subscription
+  subscription      Subscription?
+  
+  // Events
+  hostedEvents      Event[]       @relation("EventHost")
+  eventBookings     Booking[]
+  eventParticipants EventParticipant[]
+  
+  // Social
+  sentFriendRequests     Friendship[] @relation("FriendshipRequestor")
+  receivedFriendRequests Friendship[] @relation("FriendshipReceiver")
+  following              Follow[]     @relation("UserFollowing")
+  followers              Follow[]     @relation("UserFollowers")
+  
+  // Communication
+  sentMessages          Message[]    @relation("MessageSender")
+  receivedMessages      Message[]    @relation("MessageReceiver")
+  chatParticipants      ChatParticipant[]
+  
+  // Reviews & Ratings
+  givenReviews          Review[]     @relation("ReviewAuthor")
+  receivedReviews       Review[]     @relation("ReviewTarget")
+  
+  // Payments
+  payments              Payment[]
+  payoutAccounts        PayoutAccount[]
+  transactions          Transaction[]
+  
+  // Notifications
+  notifications         Notification[]
+  notificationPreferences NotificationPreference?
+  
+  // Gamification
+  userBadges            UserBadge[]
+  userPoints            UserPoint[]
+  userAchievements      UserAchievement[]
+  
+  // Safety & Moderation
+  trustScore            TrustScore?
+  reportsMade           Report[]     @relation("ReportCreator")
+  reportsReceived       Report[]     @relation("ReportTarget")
+  blockedUsers          Block[]      @relation("BlockCreator")
+  blockedByUsers        Block[]      @relation("BlockTarget")
+  
+  // Admin & Audit
+  auditLogs             AuditLog[]
+  activityLogs          ActivityLog[]
+  moderationActions     ModerationAction[]
+  
+  // Wishlist & Saved Items
+  savedEvents           SavedEvent[]
+  
+  // RBAC - Per-user permission overrides
+  userPermissions       UserPermission[]
+  
+  // Timestamps
+  lastActiveAt          DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  deletedAt             DateTime?    // Soft delete
+  
   @@index([email])
+  @@index([username])
   @@index([role])
-  @@index([isActive, isBlocked])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([lastActiveAt])
+  @@index([role, lastActiveAt])
   @@map("users")
 }
 
-model Customer {
-  id        String    @id @default(uuid())
-  userId    String    @unique
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  location  String?
-  interests String[]
-  requests  Request[]
-  ratings   Rating[]
-
+// User Profile - Extended Information
+model Profile {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Basic Info
+  firstName         String?
+  lastName          String?
+  displayName       String?
+  bio               String?   @db.Text
+  dateOfBirth       DateTime?
+  gender            Gender?
+  pronouns          String?
+  
+  // Contact
+  phone             String?   @unique
+  phoneCountryCode  String?
+  phonePublic       Boolean   @default(false)
+  emailPublic       Boolean   @default(false)
+  
+  // Location
+  city              String?
+  state             String?
+  country           String?
+  latitude          Float?
+  longitude         Float?
+  timezone          String?
+  
+  // Media
+  avatarUrl         String?
+  coverPhotoUrl     String?
+  videoIntroUrl     String?
+  photoGallery      String[]  // Array of image URLs
+  
+  // Social Links
+  websiteUrl        String?
+  facebookUrl       String?
+  instagramUrl      String?
+  twitterUrl        String?
+  linkedinUrl       String?
+  
+  // Preferences
+  interests         String[]  // Array of interest tags
+  languagesSpoken   String[]
+  profileVisibility String    @default("PUBLIC") // PUBLIC, FRIENDS_ONLY, PRIVATE
+  
+  // Statistics (Computed fields - can be updated via triggers)
+  eventsAttended    Int       @default(0)
+  eventsHosted      Int       @default(0)
+  friendsCount      Int       @default(0)
+  followersCount    Int       @default(0)
+  followingCount    Int       @default(0)
+  totalRating       Float     @default(0)
+  reviewCount       Int       @default(0)
+  
+  // Profile Completion
+  profileCompletionPercentage Int @default(0)
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
   @@index([userId])
-  @@map("customers")
+  @@index([city, country])
+  @@index([latitude, longitude])
+  @@map("profiles")
 }
 
-model Seller {
-  id              String           @id @default(uuid())
-  userId          String           @unique
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  storeName       String
-  storeUrl        String?
-  contactNumber   String?
-  whatsappNumber  String?
-  facebookPageUrl String?
-  currentPlanId   String?
-  interests       String[]
-  isVerified      Boolean          @default(false)
-  isSuspended     Boolean          @default(false)
-  averageRating   Float?           @default(0)
-  totalResponses  Int              @default(0)
-  responses       Response[]
-  sellerCredits   SellerCredit[]
-  payments        Payment[]
-  categories      SellerCategory[]
-  currentPlan     SellerPlan?      @relation(fields: [currentPlanId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-  @@index([isVerified, isSuspended])
-  @@index([averageRating])
-  @@map("sellers")
+// Identity Verification System
+model Verification {
+  id              String             @id @default(uuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type            VerificationType
+  status          VerificationStatus @default(PENDING)
+  
+  // Verification Data (encrypted/secure)
+  documentType    String?            // "PASSPORT", "DRIVERS_LICENSE", "NATIONAL_ID"
+  documentNumber  String?
+  documentUrl     String?            // Secure URL to uploaded document
+  selfieUrl       String?            // For face verification
+  
+  // OTP Verification
+  otpCode         String?
+  otpExpiresAt    DateTime?
+  otpAttempts     Int                @default(0)
+  
+  // AI Verification
+  aiVerificationScore Float?
+  aiVerificationData  Json?
+  
+  // Review
+  reviewedBy      String?            // Admin ID who reviewed
+  reviewNotes     String?            @db.Text
+  rejectionReason String?
+  
+  // Timestamps
+  verifiedAt      DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  
+  @@index([userId, type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("verifications")
 }
 
-model Admin {
-  id          String            @id @default(uuid())
-  userId      String            @unique
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  adminRole   AdminRole
-  permissions AdminPermission[]
-  auditLogs   AdminAuditLog[]
-
+// JWT Refresh Tokens
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  token       String   @unique
+  deviceInfo  String?  // User agent, device name
+  ipAddress   String?
+  
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  
   @@index([userId])
-  @@index([adminRole])
-  @@map("admins")
+  @@index([token])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// Login History & Security
+model LoginHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  ipAddress   String
+  userAgent   String?
+  deviceInfo  String?
+  location    String?  // City, Country
+  
+  success     Boolean  @default(true)
+  failReason  String?
+  
+  loginAt     DateTime @default(now())
+  logoutAt    DateTime?
+  
+  @@index([userId])
+  @@index([loginAt])
+  @@index([ipAddress])
+  @@map("login_history")
+}
+
+// User Interests/Tags (for better matching)
+model Interest {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?
+  category    String?
+  
+  isActive    Boolean  @default(true)
+  popularity  Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([category])
+  @@index([popularity])
+  @@map("interests")
+}
+
+// ============================================
+// RBAC - PERMISSION SYSTEM (Hybrid Approach)
+// ============================================
+
+// Master Permission Definitions
+model Permission {
+  id          String              @id @default(uuid())
+  
+  // Permission Identifier
+  name        String              @unique // "events:create", "users:manage"
+  category    PermissionCategory  // EVENT, USER, PAYMENT, etc.
+  action      PermissionAction    // CREATE, READ, UPDATE, DELETE, etc.
+  
+  // Description
+  description String?             @db.Text
+  
+  // Resource Constraints (Optional)
+  resourceType String?            // "Event", "User", "Payment"
+  conditions   Json?              // Additional conditions/rules
+  
+  // Metadata
+  isActive    Boolean             @default(true)
+  isSystem    Boolean             @default(false) // System permissions can't be deleted
+  
+  // Relations
+  userPermissions UserPermission[]
+  
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  @@unique([category, action])
+  @@index([category])
+  @@index([name])
+  @@index([isActive])
+  @@map("permissions")
+}
+
+// User-Specific Permission Overrides
+model UserPermission {
+  id           String         @id @default(uuid())
+  
+  // User
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Permission
+  permissionId String
+  permission   Permission     @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  // Override Type
+  type         PermissionType @default(GRANT) // GRANT or REVOKE
+  
+  // Scope (Optional - for resource-specific permissions)
+  scope        String?        // "event:123", "category:456"
+  
+  // Conditions
+  conditions   Json?          // Additional runtime conditions
+  
+  // Expiry (Optional - for temporary permissions)
+  expiresAt    DateTime?
+  
+  // Audit
+  reason       String?        @db.Text
+  grantedBy    String?        // Admin ID who granted this permission
+  grantedAt    DateTime       @default(now())
+  revokedBy    String?        // Admin ID who revoked
+  revokedAt    DateTime?
+  
+  // Metadata
+  metadata     Json?
+  
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  
+  @@unique([userId, permissionId, scope])
+  @@index([userId])
+  @@index([permissionId])
+  @@index([type])
+  @@index([expiresAt])
+  @@index([grantedBy])
+  @@map("user_permissions")
 }

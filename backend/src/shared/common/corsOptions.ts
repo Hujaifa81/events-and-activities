@@ -1,7 +1,8 @@
-import config from "@/config";
+
+import { envVars } from "@/config";
 import { CorsOptions } from "cors";
 
-const whitelist = [...config.WHITE_LIST_ORIGIN.split(",")];
+const whitelist = [...envVars.WHITE_LIST_ORIGIN.split(",")];
 
 export const corsOptions: CorsOptions = {
   origin: function (

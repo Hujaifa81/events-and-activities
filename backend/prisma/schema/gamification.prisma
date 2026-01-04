@@ -1,0 +1,299 @@
+// ============================================
+// GAMIFICATION SCHEMAS
+// ============================================
+
+// Badges/Achievements Definition
+model Badge {
+  id          String      @id @default(uuid())
+  
+  name        String      @unique
+  slug        String      @unique
+  description String?     @db.Text
+  
+  type        BadgeType
+  rarity      BadgeRarity @default(COMMON)
+  
+  // Visual
+  iconUrl     String?
+  colorCode   String?
+  
+  // Requirements
+  criteria    Json        // Requirements to earn this badge
+  
+  // Points
+  pointsReward Int        @default(0)
+  
+  // Availability
+  isActive    Boolean     @default(true)
+  isSecret    Boolean     @default(false) // Hidden until earned
+  
+  // Stats
+  earnedCount Int         @default(0)
+  
+  // Order/Priority
+  order       Int         @default(0)
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // Relations
+  userBadges  UserBadge[]
+  
+  @@index([slug])
+  @@index([type])
+  @@index([isActive])
+  @@map("badges")
+}
+
+// User Earned Badges
+model UserBadge {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  badgeId     String
+  badge       Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  
+  // Progress
+  progress    Int      @default(100) // Percentage (100 = earned)
+  
+  // Display
+  isDisplayed Boolean  @default(true) // Show on profile
+  isPinned    Boolean  @default(false)
+  
+  earnedAt    DateTime @default(now())
+  
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@index([badgeId])
+  @@index([earnedAt])
+  @@map("user_badges")
+}
+
+// Achievements (More complex than badges)
+model Achievement {
+  id              String   @id @default(uuid())
+  
+  name            String   @unique
+  slug            String   @unique
+  description     String   @db.Text
+  
+  category        String   // "SOCIAL", "EVENT", "HOST", etc.
+  
+  // Visual
+  iconUrl         String?
+  bannerUrl       String?
+  
+  // Requirements (Multi-step)
+  requirements    Json     // Array of requirement steps
+  totalSteps      Int      @default(1)
+  
+  // Rewards
+  pointsReward    Int      @default(0)
+  badgeReward     String?  // Badge ID to award
+  
+  // Availability
+  isActive        Boolean  @default(true)
+  isRepeatable    Boolean  @default(false)
+  
+  // Stats
+  completedCount  Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  userAchievements UserAchievement[]
+  
+  @@index([slug])
+  @@index([category])
+  @@map("achievements")
+}
+
+// User Achievement Progress
+model UserAchievement {
+  id              String      @id @default(uuid())
+  
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  achievementId   String
+  achievement     Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  
+  // Progress
+  currentStep     Int         @default(0)
+  totalSteps      Int
+  progress        Int         @default(0) // Percentage
+  
+  // Status
+  isCompleted     Boolean     @default(false)
+  completedAt     DateTime?
+  
+  // Data
+  progressData    Json?       // Track specific progress metrics
+  
+  startedAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@index([achievementId])
+  @@index([isCompleted])
+  @@map("user_achievements")
+}
+
+// Points System
+model UserPoint {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Points
+  points      Int
+  reason      String   // "EVENT_ATTENDED", "REVIEW_WRITTEN", etc.
+  description String?
+  
+  // Related Entity
+  entityType  String?  // "EVENT", "REVIEW", "REFERRAL"
+  entityId    String?
+  
+  // Points Expiry (optional)
+  expiresAt   DateTime?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([createdAt])
+  @@map("user_points")
+}
+
+// Point Balance (Aggregated)
+model PointBalance {
+  id                String   @id @default(uuid())
+  
+  userId            String   @unique
+  
+  totalPoints       Int      @default(0)
+  availablePoints   Int      @default(0)
+  spentPoints       Int      @default(0)
+  expiredPoints     Int      @default(0)
+  
+  // Tier System
+  currentTier       String   @default("BRONZE") // BRONZE, SILVER, GOLD, PLATINUM
+  tierProgress      Int      @default(0)
+  
+  // Lifetime Stats
+  lifetimePoints    Int      @default(0)
+  lifetimeRank      Int?     // Global rank
+  
+  lastEarnedAt      DateTime?
+  lastSpentAt       DateTime?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([totalPoints])
+  @@map("point_balances")
+}
+
+// Leaderboard
+model Leaderboard {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  
+  // Leaderboard Type
+  type        String   // "POINTS", "EVENTS_ATTENDED", "EVENTS_HOSTED", etc.
+  period      String   // "ALL_TIME", "MONTHLY", "WEEKLY"
+  
+  // Score/Rank
+  score       Float
+  rank        Int
+  
+  // Period Info
+  periodStart DateTime?
+  periodEnd   DateTime?
+  
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([userId, type, period])
+  @@index([type, period, rank])
+  @@index([userId])
+  @@map("leaderboards")
+}
+
+// Referral System
+model Referral {
+  id              String   @id @default(uuid())
+  
+  referrerId      String   // User who referred
+  referredUserId  String   @unique // New user who was referred
+  
+  referralCode    String
+  
+  // Rewards
+  referrerReward  Int      @default(0) // Points/Credits
+  referredReward  Int      @default(0)
+  
+  // Status
+  isCompleted     Boolean  @default(false)
+  completedAt     DateTime?
+  
+  // Tracking
+  ipAddress       String?
+  userAgent       String?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([referrerId])
+  @@index([referredUserId])
+  @@index([referralCode])
+  @@map("referrals")
+}
+
+// Referral Codes
+model ReferralCode {
+  id          String   @id @default(uuid())
+  
+  userId      String   @unique
+  code        String   @unique
+  
+  // Stats
+  usageCount  Int      @default(0)
+  maxUsage    Int?     // Null = unlimited
+  
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([code])
+  @@index([userId])
+  @@map("referral_codes")
+}
+
+// Streaks (Daily login, event attendance, etc.)
+model Streak {
+  id              String   @id @default(uuid())
+  
+  userId          String
+  
+  type            String   // "LOGIN", "EVENT_ATTENDANCE", "HOSTING"
+  
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  
+  lastActivityAt  DateTime
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([userId, type])
+  @@index([userId])
+  @@index([type])
+  @@map("streaks")
+}

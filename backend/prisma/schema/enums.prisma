@@ -1,53 +1,378 @@
+// ============================================
+// ENUMS - Centralized Type Definitions
+// ============================================
+
+// User & Authentication Enums
 enum UserRole {
   USER
-  SELLER
-  ADMIN
-}
-
-enum AdminRole {
-  SUPER_ADMIN
+  HOST
   ADMIN
   MODERATOR
+  SUPER_ADMIN
 }
 
-enum RequestStatus {
-  OPEN
-  RESPONDED
-  CLOSED
-}
-
-enum SellerPlanType {
-  SUBSCRIPTION
-  PAY_PER_RESPONSE
-}
-
-enum SellerCreditStatus {
+enum UserStatus {
   ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+  DEACTIVATED
+  PENDING_VERIFICATION
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+  OTHER
+}
+
+enum VerificationType {
+  EMAIL
+  PHONE
+  GOVERNMENT_ID
+  FACE_VERIFICATION
+  ADDRESS
+  BACKGROUND_CHECK
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
   EXPIRED
-  USED_UP
 }
 
-enum PaymentType {
-  BUY_CREDITS
-  SUBSCRIPTION
-  REFUND
+// Permission Enums
+enum PermissionCategory {
+  EVENT
+  USER
+  PAYMENT
+  SOCIAL
+  REVIEW
+  NOTIFICATION
+  ADMIN
+  MODERATION
+  ANALYTICS
+  SYSTEM
 }
 
+enum PermissionAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  MANAGE
+  VIEW_ALL
+  APPROVE
+  REJECT
+  PUBLISH
+  UNPUBLISH
+}
+
+enum PermissionType {
+  GRANT   // Give permission
+  REVOKE  // Remove permission
+}
+
+// Event Enums
+enum EventType {
+  MUSIC_CONCERT
+  SPORTS_FITNESS
+  ARTS_CRAFTS
+  FOOD_DINING
+  GAMING_ESPORTS
+  BOOKS_LEARNING
+  WELLNESS_YOGA
+  OUTDOOR_ADVENTURE
+  NETWORKING_BUSINESS
+  ENTERTAINMENT_SHOWS
+  TECH_INNOVATION
+  PET_ACTIVITIES
+  TRAVEL_TOURS
+  BOARD_GAMES_HOBBIES
+  PHOTOGRAPHY
+  CYCLING_BIKING
+  SWIMMING_WATER_SPORTS
+  ROCK_CLIMBING
+  KARAOKE_OPEN_MIC
+  VOLUNTEERING_SOCIAL_CAUSES
+  OTHER
+}
+
+enum EventStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PUBLISHED
+  OPEN
+  FULL
+  CANCELLED
+  POSTPONED
+  COMPLETED
+  ARCHIVED
+}
+
+enum EventVisibility {
+  PUBLIC
+  PRIVATE
+  INVITE_ONLY
+  FOLLOWERS_ONLY
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+  ALL_LEVELS
+}
+
+enum EventMode {
+  PHYSICAL
+  VIRTUAL
+  HYBRID
+}
+
+// Booking & Participation Enums
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+  ATTENDED
+  NO_SHOW
+  WAITLISTED
+}
+
+enum ParticipantRole {
+  PARTICIPANT
+  CO_HOST
+  ORGANIZER
+}
+
+// Payment Enums
 enum PaymentStatus {
   PENDING
+  PROCESSING
   COMPLETED
   FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
 }
 
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  BKASH
+  NAGAD
+  ROCKET
+  STRIPE
+  SSLCOMMERZ
+  WALLET
+  BANK_TRANSFER
+}
+
+enum TransactionType {
+  BOOKING_PAYMENT
+  REFUND
+  COMMISSION
+  PAYOUT
+  SUBSCRIPTION
+  TIP
+  DONATION
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+// Subscription Enums
+enum SubscriptionPlan {
+  FREE
+  PREMIUM_USER
+  HOST_BASIC
+  HOST_PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELLED
+  EXPIRED
+  TRIAL
+  PAST_DUE
+}
+
+// Social & Communication Enums
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  DELETED
+}
+
+enum ChatType {
+  ONE_ON_ONE
+  EVENT_GROUP
+  CUSTOM_GROUP
+}
+
+// Notification Enums
 enum NotificationType {
-  SYSTEM
-  USER
-  SELLER
-  PROMOTION
+  EVENT_REMINDER
+  EVENT_UPDATE
+  EVENT_CANCELLED
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  NEW_MESSAGE
+  NEW_REVIEW
+  FRIEND_REQUEST
+  EVENT_INVITATION
+  SYSTEM_ANNOUNCEMENT
+  PROMOTIONAL
+  SAFETY_ALERT
+  WAITLIST_AVAILABLE
+  NEW_FOLLOWER
+  EVENT_RECOMMENDATION
 }
 
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
 
-enum AttachmentType {
-  IMAGE
-  PDF
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Review & Rating Enums
+enum RatingCategory {
+  EVENT_QUALITY
+  HOST_FRIENDLINESS
+  VALUE_FOR_MONEY
+  SAFETY
+  ORGANIZATION
+  COMMUNICATION
+  OVERALL
+}
+
+// Report & Moderation Enums
+enum ReportType {
+  SPAM
+  HARASSMENT
+  INAPPROPRIATE_CONTENT
+  FAKE_PROFILE
+  SCAM
+  VIOLENCE
+  HATE_SPEECH
+  DISCRIMINATION
+  SAFETY_CONCERN
+  COPYRIGHT_VIOLATION
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+  ESCALATED
+}
+
+enum ReportEntityType {
+  USER
+  EVENT
+  REVIEW
+  MESSAGE
+  POST
+  COMMENT
+}
+
+enum ModerationAction {
+  WARNING
+  CONTENT_REMOVED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_BANNED
+  NO_ACTION
+}
+
+// Badge & Achievement Enums
+enum BadgeType {
+  MILESTONE
+  CATEGORY_SPECIALIST
+  SOCIAL
+  VERIFICATION
+  SPECIAL
+  SEASONAL
+}
+
+enum BadgeRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+// Admin & Audit Enums
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  VERIFY
+  APPROVE
+  REJECT
+  SUSPEND
+  BAN
+  RESTORE
+}
+
+enum AuditEntityType {
+  USER
+  EVENT
+  PAYMENT
+  REVIEW
+  REPORT
+  SUBSCRIPTION
+  SYSTEM_SETTING
+}
+
+// Trust & Safety Enums
+enum TrustLevel {
+  NEW
+  BASIC
+  TRUSTED
+  VERIFIED
+  HIGHLY_TRUSTED
+  SUSPICIOUS
+  FLAGGED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 }

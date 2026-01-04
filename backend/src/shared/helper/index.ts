@@ -1,1 +1,2 @@
-export * from "./jwtHelper"
+export * from './jwtHelper';
+export * from './activityLogger';

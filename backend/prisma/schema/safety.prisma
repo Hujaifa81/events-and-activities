@@ -1,0 +1,320 @@
+// ============================================
+// SAFETY, MODERATION & TRUST SCHEMAS
+// ============================================
+
+// Report System
+model Report {
+  id              String           @id @default(uuid())
+  
+  // Reporter
+  reporterId      String
+  reporter        User             @relation("ReportCreator", fields: [reporterId], references: [id], onDelete: Cascade)
+  
+  // Target
+  targetUserId    String?
+  targetUser      User?            @relation("ReportTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  
+  entityType      ReportEntityType
+  entityId        String
+  
+  // Report Details
+  type            ReportType
+  reason          String           @db.Text
+  description     String?          @db.Text
+  
+  // Evidence
+  screenshots     String[]         // URLs to evidence
+  additionalInfo  Json?
+  
+  // Status
+  status          ReportStatus     @default(PENDING)
+  priority        String           @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  
+  // Review
+  reviewedBy      String?          // Admin/Moderator ID
+  reviewNotes     String?          @db.Text
+  action          ModerationAction?
+  actionDetails   String?          @db.Text
+  
+  // Timestamps
+  resolvedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  @@index([reporterId])
+  @@index([targetUserId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+// Block/Mute Users
+model Block {
+  id          String   @id @default(uuid())
+  
+  blockerId   String
+  blocker     User     @relation("BlockCreator", fields: [blockerId], references: [id], onDelete: Cascade)
+  
+  blockedId   String
+  blocked     User     @relation("BlockTarget", fields: [blockedId], references: [id], onDelete: Cascade)
+  
+  reason      String?
+  isMuted     Boolean  @default(false) // Mute instead of full block
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("blocks")
+}
+
+// Trust Score System
+model TrustScore {
+  id                      String    @id @default(uuid())
+  
+  userId                  String    @unique
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Overall Score (0-100)
+  score                   Float     @default(50)
+  level                   TrustLevel @default(NEW)
+  
+  // Component Scores
+  identityVerificationScore Float   @default(0)
+  behaviorScore           Float     @default(50)
+  communityScore          Float     @default(50)
+  activityScore           Float     @default(0)
+  
+  // Positive Factors
+  verificationCount       Int       @default(0)
+  positiveReviewsCount    Int       @default(0)
+  eventsCompletedCount    Int       @default(0)
+  friendsCount            Int       @default(0)
+  referralsCount          Int       @default(0)
+  
+  // Negative Factors
+  reportsAgainstCount     Int       @default(0)
+  negativeReviewsCount    Int       @default(0)
+  cancellationsCount      Int       @default(0)
+  noShowsCount            Int       @default(0)
+  warningsCount           Int       @default(0)
+  
+  // Risk Assessment
+  riskLevel               RiskLevel @default(LOW)
+  riskFactors             String[]
+  
+  // Flags
+  isFlagged               Boolean   @default(false)
+  flagReason              String?
+  
+  // Calculation
+  lastCalculatedAt        DateTime  @default(now())
+  nextCalculationAt       DateTime?
+  
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([score])
+  @@index([level])
+  @@index([riskLevel])
+  @@map("trust_scores")
+}
+
+// Safety Check-ins (During events)
+model SafetyCheckIn {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  eventId     String
+  
+  // Location
+  latitude    Float?
+  longitude   Float?
+  location    String?
+  
+  // Status
+  status      String   @default("SAFE") // SAFE, NEED_HELP, EMERGENCY
+  message     String?
+  
+  // Response
+  acknowledgedBy    String?  // Friend/Admin who acknowledged
+  acknowledgedAt    DateTime?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([eventId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("safety_check_ins")
+}
+
+// Emergency Contacts
+model EmergencyContact {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  
+  name        String
+  relationship String  // "FAMILY", "FRIEND", "SPOUSE", etc.
+  phone       String
+  email       String?
+  
+  isPrimary   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+  @@map("emergency_contacts")
+}
+
+// Content Moderation Queue
+model ModerationQueueItem {
+  id              String   @id @default(uuid())
+  
+  entityType      String   // "USER", "EVENT", "REVIEW", "POST", "MESSAGE"
+  entityId        String
+  
+  // Content
+  content         String?  @db.Text
+  mediaUrls       String[]
+  
+  // AI Moderation
+  aiScore         Float?   // Confidence score
+  aiFlags         String[] // Detected issues
+  aiAnalysis      Json?
+  
+  // Status
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED, ESCALATED
+  priority        String   @default("MEDIUM")
+  
+  // Review
+  reviewedBy      String?
+  reviewNotes     String?  @db.Text
+  action          String?  // "APPROVE", "REJECT", "EDIT", "DELETE"
+  
+  // Timestamps
+  flaggedAt       DateTime @default(now())
+  reviewedAt      DateTime?
+  
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([priority])
+  @@index([flaggedAt])
+  @@map("moderation_queue")
+}
+
+// Warning System
+model Warning {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  
+  type        String   // "BEHAVIOR", "CONTENT", "POLICY_VIOLATION"
+  severity    String   // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+  
+  reason      String   @db.Text
+  details     String?  @db.Text
+  
+  // Related
+  relatedEntityType String?
+  relatedEntityId   String?
+  
+  // Issued By
+  issuedBy    String   // Admin/System ID
+  
+  // Acknowledgement
+  acknowledged Boolean @default(false)
+  acknowledgedAt DateTime?
+  
+  // Expiry
+  expiresAt   DateTime?
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([severity])
+  @@index([isActive])
+  @@map("warnings")
+}
+
+// Suspension/Ban Records
+model SuspensionRecord {
+  id              String   @id @default(uuid())
+  
+  userId          String
+  
+  type            String   // "TEMPORARY_SUSPENSION", "PERMANENT_BAN"
+  reason          String   @db.Text
+  
+  // Duration
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  
+  // Restrictions
+  restrictions    String[] // "NO_EVENT_HOSTING", "NO_MESSAGING", "NO_BOOKING", etc.
+  
+  // Issued By
+  issuedBy        String   // Admin ID
+  
+  // Appeal
+  appealSubmitted Boolean  @default(false)
+  appealReason    String?  @db.Text
+  appealStatus    String?  // "PENDING", "APPROVED", "REJECTED"
+  appealReviewedBy String?
+  appealReviewedAt DateTime?
+  
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([isActive])
+  @@index([endDate])
+  @@map("suspension_records")
+}
+
+// Suspicious Activity Detection
+model SuspiciousActivity {
+  id              String   @id @default(uuid())
+  
+  userId          String
+  
+  activityType    String   // "MULTIPLE_LOGINS", "RAPID_BOOKINGS", "SPAM_MESSAGES", etc.
+  description     String   @db.Text
+  
+  // Detection
+  detectedBy      String   @default("SYSTEM") // "SYSTEM", "AI", "MANUAL"
+  confidence      Float    // 0-1
+  
+  // Context
+  ipAddress       String?
+  userAgent       String?
+  location        String?
+  metadata        Json?
+  
+  // Status
+  status          String   @default("FLAGGED") // FLAGGED, UNDER_REVIEW, RESOLVED, FALSE_POSITIVE
+  
+  // Review
+  reviewedBy      String?
+  reviewNotes     String?  @db.Text
+  actionTaken     String?
+  
+  detectedAt      DateTime @default(now())
+  reviewedAt      DateTime?
+  
+  @@index([userId])
+  @@index([activityType])
+  @@index([status])
+  @@index([detectedAt])
+  @@map("suspicious_activities")
+}

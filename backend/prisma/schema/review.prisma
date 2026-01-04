@@ -1,0 +1,165 @@
+// ============================================
+// REVIEW & RATING SCHEMAS
+// ============================================
+
+// Reviews & Ratings
+model Review {
+  id              String   @id @default(uuid())
+  
+  // Author
+  authorId        String
+  author          User     @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  
+  // Target (Host or Event)
+  targetUserId    String?  // Host being reviewed
+  targetUser      User?    @relation("ReviewTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  
+  eventId         String
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  // Rating (1-5 stars)
+  overallRating   Float    // Overall rating
+  
+  // Category Ratings
+  ratings         CategoryRating[]
+  
+  // Review Content
+  title           String?
+  comment         String?  @db.Text
+  
+  // Media
+  photos          String[] // Review photos
+  videos          String[]
+  
+  // Verification
+  isVerifiedAttendee Boolean @default(false)
+  
+  // Host Response
+  response        String?  @db.Text
+  responseAt      DateTime?
+  respondedBy     String?
+  
+  // Engagement
+  helpfulCount    Int      @default(0)
+  unhelpfulCount  Int      @default(0)
+  
+  // Moderation
+  isFlagged       Boolean  @default(false)
+  flagReason      String?
+  isApproved      Boolean  @default(true)
+  moderatedBy     String?
+  moderatedAt     DateTime?
+  
+  // Visibility
+  isPublic        Boolean  @default(true)
+  isAnonymous     Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  
+  @@unique([authorId, eventId]) // One review per user per event
+  @@index([authorId])
+  @@index([targetUserId])
+  @@index([eventId])
+  @@index([overallRating])
+  @@index([isVerifiedAttendee])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+// Category Ratings (Breakdown of overall rating)
+model CategoryRating {
+  id          String         @id @default(uuid())
+  
+  reviewId    String
+  review      Review         @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  
+  category    RatingCategory
+  rating      Float          // 1-5 stars
+  
+  @@unique([reviewId, category])
+  @@index([reviewId])
+  @@index([category])
+  @@map("category_ratings")
+}
+
+// Review Helpfulness Votes
+model ReviewVote {
+  id          String   @id @default(uuid())
+  
+  reviewId    String
+  userId      String
+  
+  isHelpful   Boolean  // true = helpful, false = unhelpful
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([reviewId, userId])
+  @@index([reviewId])
+  @@index([userId])
+  @@map("review_votes")
+}
+
+// User/Host Rating Summary (Cached/Aggregated)
+model RatingSummary {
+  id                    String   @id @default(uuid())
+  
+  userId                String   @unique // Host user ID
+  
+  // Overall
+  overallRating         Float    @default(0)
+  totalReviews          Int      @default(0)
+  
+  // Rating Distribution
+  fiveStarCount         Int      @default(0)
+  fourStarCount         Int      @default(0)
+  threeStarCount        Int      @default(0)
+  twoStarCount          Int      @default(0)
+  oneStarCount          Int      @default(0)
+  
+  // Category Averages
+  eventQualityAvg       Float    @default(0)
+  hostFriendlinessAvg   Float    @default(0)
+  valueForMoneyAvg      Float    @default(0)
+  safetyAvg             Float    @default(0)
+  organizationAvg       Float    @default(0)
+  communicationAvg      Float    @default(0)
+  
+  // Verified Reviews
+  verifiedReviewsCount  Int      @default(0)
+  verifiedReviewsPercent Float   @default(0)
+  
+  // Recent Performance
+  last30DaysRating      Float    @default(0)
+  last30DaysReviewCount Int      @default(0)
+  
+  // Recommendations
+  recommendationRate    Float    @default(0) // % who would recommend
+  
+  lastCalculatedAt      DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([overallRating])
+  @@map("rating_summaries")
+}
+
+// Review Replies (Nested comments on reviews)
+model ReviewReply {
+  id          String   @id @default(uuid())
+  
+  reviewId    String
+  authorId    String   // User replying
+  
+  content     String   @db.Text
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([reviewId])
+  @@index([authorId])
+  @@map("review_replies")
+}

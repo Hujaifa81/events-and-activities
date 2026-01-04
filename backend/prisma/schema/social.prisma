@@ -1,0 +1,321 @@
+// ============================================
+// SOCIAL & COMMUNICATION SCHEMAS
+// ============================================
+
+// Friendship/Friend Requests
+model Friendship {
+  id          String           @id @default(uuid())
+  
+  requestorId String
+  requestor   User             @relation("FriendshipRequestor", fields: [requestorId], references: [id], onDelete: Cascade)
+  
+  receiverId  String
+  receiver    User             @relation("FriendshipReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  status      FriendshipStatus @default(PENDING)
+  
+  message     String?          @db.Text // Optional message with friend request
+  
+  acceptedAt  DateTime?
+  rejectedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  @@unique([requestorId, receiverId])
+  @@index([requestorId])
+  @@index([receiverId])
+  @@index([status])
+  @@map("friendships")
+}
+
+// Follow System (Like Twitter/Instagram)
+model Follow {
+  id          String   @id @default(uuid())
+  
+  followerId  String
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  
+  followingId String
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+// Chat Rooms/Conversations
+model Chat {
+  id              String            @id @default(uuid())
+  
+  type            ChatType          @default(ONE_ON_ONE)
+  name            String?           // For group chats
+  description     String?
+  avatarUrl       String?
+  
+  // For event group chats
+  eventId         String?
+  isEventChat     Boolean           @default(false)
+  
+  // Settings
+  isActive        Boolean           @default(true)
+  isMuted         Boolean           @default(false)
+  
+  createdBy       String            // User who created the chat
+  
+  // Relationships
+  participants    ChatParticipant[]
+  messages        Message[]
+  
+  // Last message cache (for performance)
+  lastMessageText String?
+  lastMessageAt   DateTime?
+  lastMessageBy   String?
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@index([eventId])
+  @@index([isEventChat])
+  @@index([createdBy])
+  @@index([lastMessageAt])
+  @@map("chats")
+}
+
+// Chat Participants
+model ChatParticipant {
+  id          String   @id @default(uuid())
+  
+  chatId      String
+  chat        Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Participant Role
+  role        String   @default("MEMBER") // ADMIN, MEMBER
+  
+  // Read Status
+  lastReadAt  DateTime?
+  unreadCount Int      @default(0)
+  
+  // Settings
+  isMuted     Boolean  @default(false)
+  isPinned    Boolean  @default(false)
+  
+  joinedAt    DateTime @default(now())
+  leftAt      DateTime?
+  
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
+  @@map("chat_participants")
+}
+
+// Messages
+model Message {
+  id          String        @id @default(uuid())
+  
+  chatId      String
+  chat        Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  
+  senderId    String
+  sender      User          @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+  
+  receiverId  String?       // For one-on-one chats
+  receiver    User?         @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Restrict)
+  
+  // Content
+  content     String        @db.Text
+  messageType String        @default("TEXT") // TEXT, IMAGE, VIDEO, AUDIO, FILE, LOCATION, SYSTEM
+  
+  // Media
+  mediaUrls   String[]      // URLs for images, videos, files
+  thumbnails  String[]
+  
+  // Metadata
+  metadata    Json?         // For location, file info, etc.
+  
+  // Status
+  status      MessageStatus @default(SENT)
+  
+  // Reply/Thread
+  replyToId   String?
+  replyTo     Message?      @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[]     @relation("MessageReplies")
+  
+  // Reactions
+  reactions   MessageReaction[]
+  
+  // Edit/Delete
+  isEdited    Boolean       @default(false)
+  editedAt    DateTime?
+  isDeleted   Boolean       @default(false)
+  deletedAt   DateTime?
+  deletedFor  String[]      // User IDs who deleted this message (for them)
+  
+  // Read Receipts
+  readBy      String[]      // Array of user IDs who read the message
+  readAt      DateTime?
+  
+  deliveredAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  @@index([chatId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+  @@index([status])
+  @@map("messages")
+}
+
+// Message Reactions (Like, Love, etc.)
+model MessageReaction {
+  id          String   @id @default(uuid())
+  
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  
+  emoji       String   // "👍", "❤️", "😂", etc.
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_reactions")
+}
+
+// Social Feed Posts
+model Post {
+  id          String   @id @default(uuid())
+  
+  authorId    String
+  
+  // Content
+  content     String?  @db.Text
+  mediaUrls   String[] // Images, videos
+  
+  // Related Event
+  eventId     String?
+  
+  // Privacy
+  visibility  String   @default("PUBLIC") // PUBLIC, FRIENDS, PRIVATE
+  
+  // Engagement
+  likeCount   Int      @default(0)
+  commentCount Int     @default(0)
+  shareCount  Int      @default(0)
+  
+  // Relationships
+  likes       PostLike[]
+  comments    Comment[]
+  
+  // Timestamps
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([authorId])
+  @@index([eventId])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+// Post Likes
+model PostLike {
+  id        String   @id @default(uuid())
+  
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+  @@map("post_likes")
+}
+
+// Post Comments
+model Comment {
+  id          String    @id @default(uuid())
+  
+  postId      String
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  authorId    String
+  
+  content     String    @db.Text
+  
+  // Nested Comments
+  parentId    String?
+  parent      Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     Comment[] @relation("CommentReplies")
+  
+  // Engagement
+  likeCount   Int       @default(0)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([createdAt])
+  @@map("comments")
+}
+
+// Stories (24-hour disappearing content)
+model Story {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  
+  content     String?
+  mediaUrl    String?
+  mediaType   String   @default("IMAGE") // IMAGE, VIDEO
+  
+  // Privacy
+  visibility  String   @default("PUBLIC")
+  
+  // Engagement
+  viewCount   Int      @default(0)
+  views       StoryView[]
+  
+  // Expiry
+  expiresAt   DateTime
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("stories")
+}
+
+// Story Views
+model StoryView {
+  id        String   @id @default(uuid())
+  
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  
+  viewedAt  DateTime @default(now())
+  
+  @@unique([storyId, userId])
+  @@index([storyId])
+  @@index([userId])
+  @@map("story_views")
+}

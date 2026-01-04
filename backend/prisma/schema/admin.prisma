@@ -1,0 +1,505 @@
+// ============================================
+// ADMIN, AUDIT & ANALYTICS SCHEMAS
+// ============================================
+
+// Admin Actions Audit Log
+model AuditLog {
+  id              String          @id @default(uuid())
+  
+  // Actor (who performed the action)
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  // Action Details
+  action          AuditAction
+  entityType      AuditEntityType
+  entityId        String
+  
+  // Changes
+  description     String?         @db.Text
+  oldValues       Json?           // Previous state
+  newValues       Json?           // New state
+  changes         Json?           // Diff
+  
+  // Context
+  ipAddress       String?
+  userAgent       String?
+  location        String?
+  
+  // Metadata
+  metadata        Json?
+  
+  // Severity
+  severity        String          @default("INFO") // INFO, WARNING, ERROR, CRITICAL
+  
+  createdAt       DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([severity])
+  @@map("audit_logs")
+}
+
+// User Activity Log (for analytics)
+model ActivityLog {
+  id              String   @id @default(uuid())
+  
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Activity
+  activityType    String   // "PAGE_VIEW", "SEARCH", "EVENT_VIEW", "BOOKING", etc.
+  activityName    String
+  
+  // Context
+  page            String?
+  referrer        String?
+  
+  // Related Entity
+  entityType      String?
+  entityId        String?
+  
+  // Session
+  sessionId       String?
+  
+  // Device Info
+  ipAddress       String?
+  userAgent       String?
+  device          String?
+  browser         String?
+  os              String?
+  
+  // Location
+  country         String?
+  city            String?
+  
+  // Metadata
+  metadata        Json?
+  
+  // Duration
+  duration        Int?     // Milliseconds
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+  @@index([activityType])
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// Admin Dashboard Statistics (Cached)
+model DashboardStats {
+  id              String   @id @default(uuid())
+  
+  // Period
+  period          String   // "DAILY", "WEEKLY", "MONTHLY", "YEARLY"
+  date            DateTime // Period start date
+  
+  // User Stats
+  totalUsers      Int      @default(0)
+  newUsers        Int      @default(0)
+  activeUsers     Int      @default(0)
+  deletedUsers    Int      @default(0)
+  
+  // Host Stats
+  totalHosts      Int      @default(0)
+  newHosts        Int      @default(0)
+  activeHosts     Int      @default(0)
+  
+  // Event Stats
+  totalEvents     Int      @default(0)
+  newEvents       Int      @default(0)
+  completedEvents Int      @default(0)
+  cancelledEvents Int      @default(0)
+  
+  // Booking Stats
+  totalBookings   Int      @default(0)
+  newBookings     Int      @default(0)
+  cancelledBookings Int    @default(0)
+  
+  // Financial Stats
+  totalRevenue    Float    @default(0)
+  platformRevenue Float    @default(0)
+  hostRevenue     Float    @default(0)
+  refundedAmount  Float    @default(0)
+  
+  // Engagement Stats
+  totalPageViews  Int      @default(0)
+  avgSessionDuration Float @default(0)
+  
+  // Generated At
+  generatedAt     DateTime @default(now())
+  
+  @@unique([period, date])
+  @@index([period])
+  @@index([date])
+  @@map("dashboard_stats")
+}
+
+// System Settings/Configuration
+model SystemSetting {
+  id          String   @id @default(uuid())
+  
+  key         String   @unique
+  value       String   @db.Text
+  valueType   String   @default("STRING") // STRING, NUMBER, BOOLEAN, JSON
+  
+  category    String   // "GENERAL", "PAYMENT", "EMAIL", "FEATURE_FLAGS", etc.
+  description String?  @db.Text
+  
+  isPublic    Boolean  @default(false) // Public settings can be accessed by frontend
+  isEditable  Boolean  @default(true)
+  
+  // Validation
+  validationRules Json?
+  
+  updatedBy   String?  // Admin ID
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([key])
+  @@index([category])
+  @@map("system_settings")
+}
+
+// Feature Flags
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  
+  name        String   @unique
+  description String?  @db.Text
+  
+  isEnabled   Boolean  @default(false)
+  
+  // Rollout Strategy
+  rolloutPercentage Int @default(0) // 0-100
+  targetUserIds     String[] // Specific users to enable
+  targetRoles       UserRole[] // Roles to enable
+  
+  // Environment
+  environments      String[] // ["DEVELOPMENT", "STAGING", "PRODUCTION"]
+  
+  // Metadata
+  metadata    Json?
+  
+  createdBy   String
+  updatedBy   String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([name])
+  @@index([isEnabled])
+  @@map("feature_flags")
+}
+
+// API Keys (for integrations)
+model ApiKey {
+  id              String   @id @default(uuid())
+  
+  name            String
+  key             String   @unique
+  
+  // Ownership
+  userId          String?  // If user-specific
+  
+  // Permissions
+  permissions     String[] // ["READ_EVENTS", "CREATE_BOOKING", etc.]
+  scopes          String[]
+  
+  // Rate Limiting
+  rateLimit       Int      @default(1000) // Requests per hour
+  currentUsage    Int      @default(0)
+  
+  // IP Whitelist
+  allowedIps      String[]
+  
+  // Status
+  isActive        Boolean  @default(true)
+  
+  // Expiry
+  expiresAt       DateTime?
+  
+  // Usage Stats
+  lastUsedAt      DateTime?
+  totalRequests   Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([key])
+  @@index([userId])
+  @@map("api_keys")
+}
+
+// Background Jobs/Tasks
+model BackgroundJob {
+  id          String   @id @default(uuid())
+  
+  name        String
+  type        String   // "EMAIL", "NOTIFICATION", "DATA_SYNC", etc.
+  
+  // Status
+  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+  
+  // Data
+  payload     Json
+  result      Json?
+  error       String?  @db.Text
+  
+  // Execution
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  
+  // Priority
+  priority    Int      @default(0) // Higher = more important
+  
+  // Scheduling
+  scheduledFor DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  
+  // Worker
+  workerId    String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([status])
+  @@index([type])
+  @@index([scheduledFor])
+  @@index([priority])
+  @@map("background_jobs")
+}
+
+// Platform Announcements
+model Announcement {
+  id              String   @id @default(uuid())
+  
+  title           String
+  message         String   @db.Text
+  
+  // Type
+  type            String   @default("INFO") // INFO, WARNING, MAINTENANCE, FEATURE
+  
+  // Targeting
+  targetAudience  String   @default("ALL") // ALL, USERS, HOSTS, ADMINS
+  targetUserIds   String[]
+  
+  // Display
+  isActive        Boolean  @default(true)
+  isPinned        Boolean  @default(false)
+  showBanner      Boolean  @default(false)
+  
+  // Links
+  actionUrl       String?
+  actionText      String?
+  
+  // Visibility
+  startDate       DateTime?
+  endDate         DateTime?
+  
+  // Stats
+  viewCount       Int      @default(0)
+  
+  createdBy       String   // Admin ID
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([isActive])
+  @@index([targetAudience])
+  @@index([startDate, endDate])
+  @@map("announcements")
+}
+
+// FAQ Management
+model Faq {
+  id          String   @id @default(uuid())
+  
+  question    String   @db.Text
+  answer      String   @db.Text
+  
+  category    String   // "GENERAL", "BOOKING", "PAYMENT", "HOSTING", etc.
+  
+  // SEO
+  slug        String   @unique
+  keywords    String[]
+  
+  // Display
+  order       Int      @default(0)
+  isPublished Boolean  @default(true)
+  
+  // Stats
+  viewCount   Int      @default(0)
+  helpfulCount Int     @default(0)
+  unhelpfulCount Int   @default(0)
+  
+  createdBy   String
+  updatedBy   String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([category])
+  @@index([slug])
+  @@index([isPublished])
+  @@map("faqs")
+}
+
+// Support Tickets
+model SupportTicket {
+  id              String   @id @default(uuid())
+  ticketNumber    String   @unique
+  
+  userId          String
+  
+  subject         String
+  description     String   @db.Text
+  
+  category        String   // "TECHNICAL", "BILLING", "ACCOUNT", "GENERAL"
+  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status          String   @default("OPEN") // OPEN, IN_PROGRESS, WAITING, RESOLVED, CLOSED
+  
+  // Attachments
+  attachments     String[]
+  
+  // Assignment
+  assignedTo      String?  // Admin/Support ID
+  assignedAt      DateTime?
+  
+  // Resolution
+  resolution      String?  @db.Text
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  
+  // Satisfaction
+  satisfactionRating Int?  // 1-5
+  satisfactionFeedback String? @db.Text
+  
+  // Follow-up
+  lastResponseAt  DateTime?
+  lastResponseBy  String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  responses       TicketResponse[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedTo])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+// Support Ticket Responses
+model TicketResponse {
+  id          String        @id @default(uuid())
+  
+  ticketId    String
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  responderId String        // User or Admin ID
+  responderType String      // "USER", "ADMIN", "SYSTEM"
+  
+  message     String        @db.Text
+  attachments String[]
+  
+  isInternal  Boolean       @default(false) // Internal notes
+  
+  createdAt   DateTime      @default(now())
+  
+  @@index([ticketId])
+  @@index([responderId])
+  @@map("ticket_responses")
+}
+
+// Error Logs (Application Errors)
+model ErrorLog {
+  id          String   @id @default(uuid())
+  
+  // Error Info
+  errorType   String
+  errorMessage String  @db.Text
+  stackTrace  String?  @db.Text
+  
+  // Context
+  userId      String?
+  endpoint    String?
+  method      String?
+  
+  // Request
+  requestBody Json?
+  requestHeaders Json?
+  
+  // Environment
+  environment String   // "DEVELOPMENT", "STAGING", "PRODUCTION"
+  appVersion  String?
+  
+  // Device
+  userAgent   String?
+  ipAddress   String?
+  
+  // Severity
+  severity    String   @default("ERROR") // INFO, WARNING, ERROR, CRITICAL
+  
+  // Status
+  isResolved  Boolean  @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([errorType])
+  @@index([severity])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isResolved])
+  @@map("error_logs")
+}
+
+// Webhooks Configuration
+model Webhook {
+  id          String   @id @default(uuid())
+  
+  name        String
+  url         String
+  
+  // Events to listen to
+  events      String[] // ["booking.created", "event.published", etc.]
+  
+  // Security
+  secret      String   // For signature verification
+  
+  // Headers
+  customHeaders Json?
+  
+  // Status
+  isActive    Boolean  @default(true)
+  
+  // Retry Policy
+  maxRetries  Int      @default(3)
+  retryDelay  Int      @default(60) // Seconds
+  
+  // Stats
+  totalCalls  Int      @default(0)
+  successCount Int     @default(0)
+  failureCount Int     @default(0)
+  lastCalledAt DateTime?
+  lastStatus  String?
+  
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive])
+  @@map("webhooks")
+}

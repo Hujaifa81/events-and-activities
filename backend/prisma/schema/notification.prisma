@@ -1,16 +1,210 @@
-model Notification {
-    id        String           @id @default(uuid())
-    userId    String
-    type      NotificationType
-    title     String
-    message   String
-    link      String? // action link
-    read      Boolean          @default(false)
-    createdAt DateTime         @default(now())
-    updatedAt DateTime         @updatedAt
-    user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+// ============================================
+// NOTIFICATION SCHEMAS
+// ============================================
 
-    @@index([userId, read])
-    @@index([createdAt])
-    @@map("notifications")
+// Notifications
+model Notification {
+  id          String               @id @default(uuid())
+  
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        NotificationType
+  channel     NotificationChannel  @default(IN_APP)
+  priority    NotificationPriority @default(MEDIUM)
+  
+  // Content
+  title       String
+  message     String               @db.Text
+  data        Json?                // Additional data (event ID, user ID, etc.)
+  
+  // Action
+  actionUrl   String?              // Deep link or URL
+  actionText  String?              // "View Event", "Reply", etc.
+  
+  // Related Entities
+  entityType  String?              // "EVENT", "USER", "BOOKING", etc.
+  entityId    String?
+  
+  // Image/Icon
+  imageUrl    String?
+  iconUrl     String?
+  
+  // Status
+  isRead      Boolean              @default(false)
+  readAt      DateTime?
+  
+  isSent      Boolean              @default(false)
+  sentAt      DateTime?
+  
+  isDelivered Boolean              @default(false)
+  deliveredAt DateTime?
+  
+  // Failure tracking
+  failedAt    DateTime?
+  failureReason String?
+  retryCount  Int                  @default(0)
+  
+  // Grouping (for collapsing similar notifications)
+  groupKey    String?
+  
+  // Expiry
+  expiresAt   DateTime?
+  
+  createdAt   DateTime             @default(now())
+  
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([groupKey])
+  @@map("notifications")
+}
+
+// User Notification Preferences
+model NotificationPreference {
+  id          String   @id @default(uuid())
+  
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Channel Preferences
+  emailEnabled     Boolean @default(true)
+  smsEnabled       Boolean @default(false)
+  pushEnabled      Boolean @default(true)
+  inAppEnabled     Boolean @default(true)
+  
+  // Notification Types
+  eventReminders          Boolean @default(true)
+  eventUpdates            Boolean @default(true)
+  eventCancellations      Boolean @default(true)
+  bookingConfirmations    Boolean @default(true)
+  paymentNotifications    Boolean @default(true)
+  newMessages             Boolean @default(true)
+  newReviews              Boolean @default(true)
+  friendRequests          Boolean @default(true)
+  eventInvitations        Boolean @default(true)
+  promotionalEmails       Boolean @default(false)
+  eventRecommendations    Boolean @default(true)
+  safetyAlerts            Boolean @default(true)
+  
+  // Frequency
+  digestEnabled           Boolean @default(false)
+  digestFrequency         String  @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
+  
+  // Quiet Hours
+  quietHoursEnabled       Boolean @default(false)
+  quietHoursStart         String? // "22:00"
+  quietHoursEnd           String? // "08:00"
+  quietHoursTimezone      String?
+  
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+// Email/SMS Queue (for bulk sending)
+model NotificationQueue {
+  id              String   @id @default(uuid())
+  
+  type            String   // "EMAIL", "SMS", "PUSH"
+  recipientId     String   // User ID
+  
+  // Content
+  subject         String?
+  body            String   @db.Text
+  templateId      String?
+  templateData    Json?
+  
+  // Destination
+  recipientEmail  String?
+  recipientPhone  String?
+  recipientToken  String?  // FCM/APNS token for push
+  
+  // Status
+  status          String   @default("PENDING") // PENDING, SENDING, SENT, FAILED
+  
+  attempts        Int      @default(0)
+  maxAttempts     Int      @default(3)
+  
+  sentAt          DateTime?
+  failedAt        DateTime?
+  errorMessage    String?
+  
+  // Priority
+  priority        NotificationPriority @default(MEDIUM)
+  
+  // Scheduling
+  scheduledFor    DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([status])
+  @@index([recipientId])
+  @@index([scheduledFor])
+  @@index([priority])
+  @@map("notification_queue")
+}
+
+// Email Templates
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  
+  // Content
+  subject     String
+  htmlBody    String   @db.Text
+  textBody    String   @db.Text
+  
+  // Variables (for templating)
+  variables   String[] // ["userName", "eventName", "bookingNumber"]
+  
+  // Category
+  category    String   // "BOOKING", "EVENT", "MARKETING", etc.
+  
+  // Localization
+  language    String   @default("en")
+  
+  isActive    Boolean  @default(true)
+  
+  // Version Control
+  version     Int      @default(1)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([category])
+  @@map("email_templates")
+}
+
+// Push Notification Device Tokens
+model DeviceToken {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  
+  token       String   @unique // FCM or APNS token
+  platform    String   // "IOS", "ANDROID", "WEB"
+  
+  deviceId    String?
+  deviceName  String?
+  appVersion  String?
+  
+  isActive    Boolean  @default(true)
+  
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([token])
+  @@index([platform])
+  @@map("device_tokens")
 }

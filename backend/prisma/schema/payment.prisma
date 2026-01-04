@@ -1,24 +1,321 @@
-model Payment {
-    id            String        @id @default(uuid())
-    sellerId      String
-    sellerPlanId  String? // plan purchased
-    type          PaymentType
-    amount        Float
-    status        PaymentStatus @default(PENDING)
-    paymentMethod String? // "Stripe", "SSLCommerz", "bKash", etc.
-    gatewayTxnId  String?       @unique // transaction id from the gateway
-    currency      String        @default("BDT")
-    description   String?
-    metadata      Json? // store gateway response
-    failureReason String?
-    completedAt   DateTime?
-    createdAt     DateTime      @default(now())
-    updatedAt     DateTime      @updatedAt
-    seller        Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-    sellerPlan    SellerPlan?   @relation(fields: [sellerPlanId], references: [id], onDelete: SetNull)
+// ============================================
+// PAYMENT & SUBSCRIPTION SCHEMAS
+// ============================================
 
-    @@index([sellerId])
-    @@index([status, createdAt])
-    @@index([gatewayTxnId])
-    @@map("payments")
+// Payment Transactions
+model Payment {
+  id                String        @id @default(uuid())
+  paymentNumber     String        @unique // Human-readable payment ID
+  
+  // User & Event
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  eventId           String?       // Null for subscriptions
+  bookingId         String?
+  booking           Booking?
+  
+  // Payment Details
+  amount            Float
+  currency          String        @default("USD")
+  status            PaymentStatus @default(PENDING)
+  method            PaymentMethod
+  
+  // Payment Gateway
+  gateway           String        // "STRIPE", "SSLCOMMERZ", "BKASH", etc.
+  gatewayPaymentId  String?       @unique // External payment ID
+  gatewayResponse   Json?         // Raw gateway response
+  
+  // Payment Intent (for Stripe, etc.)
+  paymentIntentId   String?       @unique
+  clientSecret      String?
+  
+  // Breakdown
+  subtotal          Float
+  platformFee       Float         @default(0)
+  hostEarning       Float
+  tax               Float         @default(0)
+  discountAmount    Float         @default(0)
+  
+  // Refund
+  refundable        Boolean       @default(true)
+  refundedAmount    Float         @default(0)
+  refundReason      String?
+  
+  // Metadata
+  metadata          Json?
+  receiptUrl        String?
+  invoiceUrl        String?
+  
+  // Timestamps
+  paidAt            DateTime?
+  failedAt          DateTime?
+  refundedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  
+  // Relations
+  transactions      Transaction[]
+  refunds           Refund[]
+  
+  @@index([userId])
+  @@index([eventId])
+  @@index([status])
+  @@index([method])
+  @@index([gateway])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+// Transaction Ledger (All money movements)
+model Transaction {
+  id              String          @id @default(uuid())
+  transactionNumber String        @unique
+  
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  type            TransactionType
+  amount          Float
+  currency        String          @default("USD")
+  
+  // Related entities
+  paymentId       String?
+  payment         Payment?        @relation(fields: [paymentId], references: [id])
+  
+  eventId         String?
+  subscriptionId  String?
+  
+  // Balances (before/after)
+  balanceBefore   Float           @default(0)
+  balanceAfter    Float           @default(0)
+  
+  // Description
+  description     String?
+  metadata        Json?
+  
+  // Status
+  status          String          @default("COMPLETED") // PENDING, COMPLETED, FAILED
+  
+  createdAt       DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([type])
+  @@index([paymentId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+// Refund Management
+model Refund {
+  id                String       @id @default(uuid())
+  refundNumber      String       @unique
+  
+  paymentId         String
+  payment           Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  
+  amount            Float
+  currency          String       @default("USD")
+  status            RefundStatus @default(REQUESTED)
+  reason            String?      @db.Text
+  
+  // Gateway
+  gatewayRefundId   String?      @unique
+  gatewayResponse   Json?
+  
+  // Review
+  requestedBy       String       // User ID
+  reviewedBy        String?      // Admin ID
+  reviewNotes       String?      @db.Text
+  
+  // Timestamps
+  requestedAt       DateTime     @default(now())
+  processedAt       DateTime?
+  completedAt       DateTime?
+  rejectedAt        DateTime?
+  
+  @@index([paymentId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("refunds")
+}
+
+// Subscription Plans & Management
+model Subscription {
+  id                    String             @id @default(uuid())
+  
+  userId                String             @unique
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  plan                  SubscriptionPlan   @default(FREE)
+  status                SubscriptionStatus @default(ACTIVE)
+  
+  // Billing
+  billingCycle          String             @default("MONTHLY") // MONTHLY, YEARLY
+  amount                Float              @default(0)
+  currency              String             @default("USD")
+  
+  // Payment Method
+  paymentMethod         String?            // "STRIPE", "CARD", etc.
+  stripeCustomerId      String?            @unique
+  stripeSubscriptionId  String?            @unique
+  stripePriceId         String?
+  
+  // Dates
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  cancelAt              DateTime?
+  canceledAt            DateTime?
+  trialStart            DateTime?
+  trialEnd              DateTime?
+  
+  // Metadata
+  metadata              Json?
+  
+  // Timestamps
+  startedAt             DateTime           @default(now())
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  
+  @@index([userId])
+  @@index([plan])
+  @@index([status])
+  @@index([stripeCustomerId])
+  @@map("subscriptions")
+}
+
+// Host Payout Accounts
+model PayoutAccount {
+  id                String   @id @default(uuid())
+  
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Account Type
+  accountType       String   // "BANK_ACCOUNT", "MOBILE_BANKING", "STRIPE_CONNECT"
+  
+  // Bank Details
+  bankName          String?
+  accountHolderName String?
+  accountNumber     String?
+  routingNumber     String?
+  swiftCode         String?
+  iban              String?
+  
+  // Mobile Banking
+  mobileProvider    String?  // "BKASH", "NAGAD", "ROCKET"
+  mobileNumber      String?
+  
+  // Stripe Connect
+  stripeAccountId   String?  @unique
+  
+  // Verification
+  isVerified        Boolean  @default(false)
+  verifiedAt        DateTime?
+  
+  isDefault         Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  payouts           Payout[]
+  
+  @@index([userId])
+  @@index([stripeAccountId])
+  @@map("payout_accounts")
+}
+
+// Payout Requests & Processing
+model Payout {
+  id                String   @id @default(uuid())
+  payoutNumber      String   @unique
+  
+  userId            String   // Host receiving payout
+  
+  payoutAccountId   String
+  payoutAccount     PayoutAccount @relation(fields: [payoutAccountId], references: [id], onDelete: Restrict)
+  
+  amount            Float
+  currency          String   @default("USD")
+  status            String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+  
+  // Calculation
+  grossAmount       Float    // Total earnings
+  platformFee       Float    // Commission deducted
+  tax               Float    @default(0)
+  netAmount         Float    // Amount paid out
+  
+  // Period
+  periodStart       DateTime
+  periodEnd         DateTime
+  
+  // Processing
+  method            String?  // "BANK_TRANSFER", "STRIPE", "MOBILE_BANKING"
+  gatewayPayoutId   String?
+  gatewayResponse   Json?
+  
+  failureReason     String?
+  
+  // Timestamps
+  requestedAt       DateTime @default(now())
+  processedAt       DateTime?
+  completedAt       DateTime?
+  failedAt          DateTime?
+  
+  @@index([userId])
+  @@index([payoutAccountId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("payouts")
+}
+
+// Platform Commission Configuration
+model CommissionConfig {
+  id              String   @id @default(uuid())
+  
+  subscriptionPlan SubscriptionPlan
+  
+  commissionRate  Float    // Percentage (e.g., 10 for 10%)
+  fixedFee        Float    @default(0)
+  
+  minCommission   Float?
+  maxCommission   Float?
+  
+  isActive        Boolean  @default(true)
+  effectiveFrom   DateTime @default(now())
+  effectiveUntil  DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([subscriptionPlan, effectiveFrom])
+  @@index([subscriptionPlan])
+  @@index([isActive])
+  @@map("commission_configs")
+}
+
+// Wallet/Credit System (Optional)
+model Wallet {
+  id              String   @id @default(uuid())
+  
+  userId          String   @unique
+  
+  balance         Float    @default(0)
+  currency        String   @default("USD")
+  
+  // Limits
+  creditLimit     Float    @default(0)
+  dailyLimit      Float?
+  monthlyLimit    Float?
+  
+  isActive        Boolean  @default(true)
+  isFrozen        Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([userId])
+  @@map("wallets")
 }

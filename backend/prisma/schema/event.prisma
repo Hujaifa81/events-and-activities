@@ -1,0 +1,383 @@
+// ============================================
+// EVENT MANAGEMENT SCHEMAS
+// ============================================
+
+// Main Event Model
+model Event {
+  id          String   @id @default(uuid())
+  
+  // Basic Info
+  title       String
+  slug        String   @unique
+  description String   @db.Text
+  shortDescription String?
+  
+  // Host
+  hostId      String
+  host        User     @relation("EventHost", fields: [hostId], references: [id], onDelete: Restrict)
+  coHostIds   String[] // Array of co-host user IDs
+  
+  // Category & Type
+  type        EventType
+  categoryId  String
+  category    EventCategory @relation(fields: [categoryId], references: [id])
+  tags        String[]      // Searchable tags
+  
+  // Status & Visibility
+  status      EventStatus      @default(DRAFT)
+  visibility  EventVisibility  @default(PUBLIC)
+  
+  // Date & Time
+  startDate   DateTime
+  endDate     DateTime
+  timezone    String           @default("UTC")
+  duration    Int?             // Duration in minutes
+  
+  // Recurring Events
+  isRecurring Boolean          @default(false)
+  recurrencePattern String?    // DAILY, WEEKLY, MONTHLY
+  recurrenceEndDate DateTime?
+  parentEventId     String?
+  parentEvent       Event?     @relation("RecurringEvents", fields: [parentEventId], references: [id])
+  recurringEvents   Event[]    @relation("RecurringEvents")
+  
+  // Location
+  mode        EventMode        @default(PHYSICAL)
+  
+  // Physical Location
+  venue       String?
+  address     String?
+  city        String?
+  state       String?
+  country     String?
+  postalCode  String?
+  latitude    Float?
+  longitude   Float?
+  
+  // Virtual Location
+  virtualMeetingUrl  String?
+  virtualMeetingId   String?
+  virtualPassword    String?
+  
+  // Media
+  bannerImage        String?
+  images             String[]        // Additional images
+  videoUrl           String?
+  
+  // Capacity & Restrictions
+  minParticipants    Int             @default(2)
+  maxParticipants    Int?
+  currentParticipants Int            @default(0)
+  
+  ageMin             Int?
+  ageMax             Int?
+  genderPreference   String?         // "MIXED", "MALE_ONLY", "FEMALE_ONLY"
+  difficultyLevel    DifficultyLevel @default(ALL_LEVELS)
+  
+  // Requirements
+  requiredItems      String[]        // Items participants need to bring
+  dresscode          String?
+  prerequisites      String?         @db.Text
+  
+  // Pricing
+  isFree             Boolean         @default(true)
+  price              Float?          @default(0)
+  currency           String          @default("USD")
+  earlyBirdPrice     Float?
+  earlyBirdEndDate   DateTime?
+  groupDiscountEnabled Boolean       @default(false)
+  groupDiscountMin   Int?
+  groupDiscountPercent Float?
+  
+  // Refund Policy
+  refundPolicy       String?         @db.Text
+  refundDeadline     DateTime?       // Refund available until this date
+  
+  // Features
+  instantBooking     Boolean         @default(true)
+  requiresApproval   Boolean         @default(false)
+  allowWaitlist      Boolean         @default(true)
+  allowGuestInvites  Boolean         @default(false)
+  maxGuestsPerBooking Int            @default(1)
+  
+  // SEO
+  metaTitle          String?
+  metaDescription    String?
+  keywords           String[]
+  
+  // Analytics (computed fields)
+  viewCount          Int             @default(0)
+  shareCount         Int             @default(0)
+  saveCount          Int             @default(0)
+  bookingCount       Int             @default(0)
+  attendanceRate     Float           @default(0)
+  
+  // Relationships
+  bookings           Booking[]
+  participants       EventParticipant[]
+  reviews            Review[]
+  savedBy            SavedEvent[]
+  checkIns           EventCheckIn[]
+  updates            EventUpdate[]
+  
+  // Timestamps
+  publishedAt        DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  deletedAt          DateTime?       // Soft delete
+  
+  @@index([hostId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([type])
+  @@index([startDate])
+  @@index([city, country])
+  @@index([latitude, longitude])
+  @@index([isFree, price])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("events")
+}
+
+// Event Categories
+model EventCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.Text
+  icon        String?
+  color       String?  // Hex color code
+  
+  parentId    String?
+  parent      EventCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    EventCategory[] @relation("CategoryHierarchy")
+  
+  events      Event[]
+  
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([parentId])
+  @@index([isActive, order])
+  @@map("event_categories")
+}
+
+// Event Bookings
+model Booking {
+  id              String        @id @default(uuid())
+  bookingNumber   String        @unique // Human-readable booking ID
+  
+  eventId         String
+  event           Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  status          BookingStatus @default(PENDING)
+  
+  // Booking Details
+  numberOfGuests  Int           @default(1) // Including the booker
+  guestNames      String[]      // Names of guests
+  specialRequests String?       @db.Text
+  
+  // Pricing
+  ticketPrice     Float
+  quantity        Int           @default(1)
+  subtotal        Float
+  discountAmount  Float         @default(0)
+  discountCode    String?
+  platformFee     Float         @default(0)
+  totalAmount     Float
+  currency        String        @default("USD")
+  
+  // Payment
+  paymentId       String?       @unique
+  payment         Payment?      @relation(fields: [paymentId], references: [id])
+  paymentStatus   PaymentStatus @default(PENDING)
+  paidAt          DateTime?
+  
+  // Refund
+  refundId        String?
+  refundStatus    RefundStatus?
+  refundAmount    Float?
+  refundReason    String?
+  refundRequestedAt DateTime?
+  refundProcessedAt DateTime?
+  
+  // Attendance
+  attended        Boolean       @default(false)
+  attendedAt      DateTime?
+  checkInCode     String?       @unique // QR code for check-in
+  
+  // Cancellation
+  cancelledAt     DateTime?
+  cancellationReason String?
+  
+  // Communication
+  confirmationSentAt DateTime?
+  reminderSentAt     DateTime?
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  @@index([eventId])
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+// Event Participants (Separate from bookings for flexibility)
+model EventParticipant {
+  id          String          @id @default(uuid())
+  
+  eventId     String
+  event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  role        ParticipantRole @default(PARTICIPANT)
+  status      String          @default("CONFIRMED") // CONFIRMED, CANCELLED, PENDING
+  
+  joinedAt    DateTime        @default(now())
+  leftAt      DateTime?
+  
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_participants")
+}
+
+// Event Check-In System
+model EventCheckIn {
+  id          String   @id @default(uuid())
+  
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  bookingId   String?
+  
+  checkInCode String
+  checkInMethod String @default("QR_CODE") // QR_CODE, MANUAL, FACIAL_RECOGNITION
+  
+  checkInAt   DateTime @default(now())
+  checkInBy   String?  // Admin/Staff who checked in
+  
+  location    String?
+  deviceInfo  String?
+  
+  @@index([eventId])
+  @@index([userId])
+  @@index([checkInCode])
+  @@map("event_check_ins")
+}
+
+// Event Updates/Announcements
+model EventUpdate {
+  id          String   @id @default(uuid())
+  
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  title       String
+  message     String   @db.Text
+  
+  createdBy   String   // Host user ID
+  isImportant Boolean  @default(false)
+  
+  sentToParticipants Boolean @default(false)
+  sentAt      DateTime?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([eventId])
+  @@index([createdAt])
+  @@map("event_updates")
+}
+
+// Saved/Wishlist Events
+model SavedEvent {
+  id          String   @id @default(uuid())
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  savedAt     DateTime @default(now())
+  
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
+  @@map("saved_events")
+}
+
+// Waitlist for Full Events
+model Waitlist {
+  id          String   @id @default(uuid())
+  
+  eventId     String
+  userId      String
+  
+  position    Int      // Position in queue
+  status      String   @default("WAITING") // WAITING, NOTIFIED, JOINED, EXPIRED
+  
+  notifiedAt  DateTime?
+  expiresAt   DateTime? // Notification expires after X hours
+  
+  joinedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([eventId, userId])
+  @@index([eventId, position])
+  @@index([status])
+  @@map("waitlists")
+}
+
+// Discount/Promo Codes
+model PromoCode {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  
+  description     String?
+  discountType    String   // PERCENTAGE, FIXED_AMOUNT
+  discountValue   Float
+  
+  // Constraints
+  minPurchase     Float?
+  maxDiscount     Float?
+  usageLimit      Int?     // Total usage limit
+  usagePerUser    Int      @default(1)
+  currentUsage    Int      @default(0)
+  
+  // Applicability
+  eventIds        String[] // Empty = all events
+  categoryIds     String[] // Empty = all categories
+  userIds         String[] // Empty = all users (or specific users only)
+  
+  // Validity
+  validFrom       DateTime
+  validUntil      DateTime
+  
+  isActive        Boolean  @default(true)
+  
+  createdBy       String   // Admin/Host user ID
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([code])
+  @@index([validFrom, validUntil])
+  @@index([isActive])
+  @@map("promo_codes")
+}

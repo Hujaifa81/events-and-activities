@@ -3,8 +3,12 @@ import * as modules from "@/app/modules";
 
 const moduleRoutes: { path: string; route: Router }[] = [
     {
-        path:'/user',
+        path: '/user',
         route: modules.userRoutes
+    },
+    {
+        path: '/activity',
+        route: modules.ActivityRoutes
     }
 ];
 

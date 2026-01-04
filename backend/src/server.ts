@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createServer, Server } from 'http';
-
 import app from './app';
-import config from '@/config'
 import { prisma } from '@/shared'
-
+import { envVars, redis, closeRedis } from '@/config';
+import { setupStatsCronJobs } from './app/modules/stats/stats.cron';
 
 
 async function connectToDB() {
@@ -32,7 +31,20 @@ class ServerCreator {
     return new Promise<void>((resolve) => {
       this.server.listen(5000, async () => {
         await connectToDB();
-        console.log(`Server is listening on port:${config.PORT}`);
+        
+        // Wait for Redis connection
+        await new Promise((res) => {
+          if (redis.status === 'ready') {
+            res(true);
+          } else {
+            redis.once('ready', () => res(true));
+          }
+        });
+        
+        // Initialize cron jobs for stats generation
+        setupStatsCronJobs();
+        
+        console.log(`Server is listening on port:${envVars.PORT}`);
         resolve();
       });
     });
@@ -49,6 +61,13 @@ class ServerCreator {
         });
         console.log('Server has been closed');
       }
+      
+      // Close Redis connection
+      await closeRedis();
+      
+      // Close Prisma connection
+      await prisma.$disconnect();
+      console.log('All connections closed');
     } catch (error) {
       console.error('Error during shutdown:', error);
       this.cleanupAndExit(1);
