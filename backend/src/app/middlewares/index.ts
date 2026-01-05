@@ -4,3 +4,4 @@ export * from './validateRequest';
 export * from './checkAuth';
 export * from './checkPermission';
 export * from './activityLogger';
+export * from './rateLimiter';

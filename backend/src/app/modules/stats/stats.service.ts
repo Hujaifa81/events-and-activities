@@ -213,7 +213,11 @@ const generateDailyStats = async (
       refundedAmount: refundData._sum?.amount || 0,
       totalPageViews,
       avgSessionDuration: avgSessionData.length > 0
-        ? Math.round((avgSessionData[0]._avg.duration || 0) / 1000)
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
         : 0,
     },
     update: {
@@ -237,7 +241,11 @@ const generateDailyStats = async (
       refundedAmount: refundData._sum?.amount || 0,
       totalPageViews,
       avgSessionDuration: avgSessionData.length > 0
-        ? Math.round((avgSessionData[0]._avg.duration || 0) / 1000)
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
         : 0,
     },
   });
@@ -289,6 +297,8 @@ const generateWeeklyStats = async (
     cancelledBookings,
     revenueData,
     refundData,
+    totalPageViews,
+    avgSessionData,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({
@@ -358,6 +368,27 @@ const generateWeeklyStats = async (
       },
       _sum: { amount: true },
     }),
+
+    // Page Views (ActivityLog)
+    prisma.activityLog.count({
+      where: {
+        activityType: 'PAGE_VIEW',
+        createdAt: { gte: weekStart, lte: weekEnd },
+      },
+    }),
+
+    // Average Session Duration (ActivityLog)
+    prisma.activityLog.groupBy({
+      by: ['sessionId'],
+      where: {
+        sessionId: { not: null },
+        duration: { not: null },
+        createdAt: { gte: weekStart, lte: weekEnd },
+      },
+      _avg: {
+        duration: true,
+      },
+    }),
   ]);
 
   const weeklyStats = await prisma.dashboardStats.upsert({
@@ -388,8 +419,14 @@ const generateWeeklyStats = async (
       platformRevenue: revenueData._sum?.platformFee || 0,
       hostRevenue: revenueData._sum?.hostEarning || 0,
       refundedAmount: refundData._sum?.amount || 0,
-      totalPageViews: 0,
-      avgSessionDuration: 0,
+      totalPageViews,
+      avgSessionDuration: avgSessionData.length > 0
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
+        : 0,
     },
     update: {
       totalUsers,
@@ -408,6 +445,14 @@ const generateWeeklyStats = async (
       platformRevenue: revenueData._sum?.platformFee || 0,
       hostRevenue: revenueData._sum?.hostEarning || 0,
       refundedAmount: refundData._sum?.amount || 0,
+      totalPageViews,
+      avgSessionDuration: avgSessionData.length > 0
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
+        : 0,
     },
   });
 
@@ -456,6 +501,8 @@ const generateMonthlyStats = async (
     cancelledBookings,
     revenueData,
     refundData,
+    totalPageViews,
+    avgSessionData,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({
@@ -525,6 +572,27 @@ const generateMonthlyStats = async (
       },
       _sum: { amount: true },
     }),
+
+    // Page Views (ActivityLog)
+    prisma.activityLog.count({
+      where: {
+        activityType: 'PAGE_VIEW',
+        createdAt: { gte: monthStart, lte: monthEnd },
+      },
+    }),
+
+    // Average Session Duration (ActivityLog)
+    prisma.activityLog.groupBy({
+      by: ['sessionId'],
+      where: {
+        sessionId: { not: null },
+        duration: { not: null },
+        createdAt: { gte: monthStart, lte: monthEnd },
+      },
+      _avg: {
+        duration: true,
+      },
+    }),
   ]);
 
   const monthlyStats = await prisma.dashboardStats.upsert({
@@ -555,8 +623,14 @@ const generateMonthlyStats = async (
       platformRevenue: revenueData._sum?.platformFee || 0,
       hostRevenue: revenueData._sum?.hostEarning || 0,
       refundedAmount: refundData._sum?.amount || 0,
-      totalPageViews: 0,
-      avgSessionDuration: 0,
+      totalPageViews,
+      avgSessionDuration: avgSessionData.length > 0
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
+        : 0,
     },
     update: {
       totalUsers,
@@ -575,6 +649,14 @@ const generateMonthlyStats = async (
       platformRevenue: revenueData._sum?.platformFee || 0,
       hostRevenue: revenueData._sum?.hostEarning || 0,
       refundedAmount: refundData._sum?.amount || 0,
+      totalPageViews,
+      avgSessionDuration: avgSessionData.length > 0
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
+        : 0,
     },
   });
 
@@ -623,6 +705,8 @@ const generateYearlyStats = async (
     cancelledBookings,
     revenueData,
     refundData,
+    totalPageViews,
+    avgSessionData,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({
@@ -692,6 +776,27 @@ const generateYearlyStats = async (
       },
       _sum: { amount: true },
     }),
+
+    // Page Views (ActivityLog)
+    prisma.activityLog.count({
+      where: {
+        activityType: 'PAGE_VIEW',
+        createdAt: { gte: yearStart, lte: yearEnd },
+      },
+    }),
+
+    // Average Session Duration (ActivityLog)
+    prisma.activityLog.groupBy({
+      by: ['sessionId'],
+      where: {
+        sessionId: { not: null },
+        duration: { not: null },
+        createdAt: { gte: yearStart, lte: yearEnd },
+      },
+      _avg: {
+        duration: true,
+      },
+    }),
   ]);
 
   const yearlyStats = await prisma.dashboardStats.upsert({
@@ -722,8 +827,14 @@ const generateYearlyStats = async (
       platformRevenue: revenueData._sum?.platformFee || 0,
       hostRevenue: revenueData._sum?.hostEarning || 0,
       refundedAmount: refundData._sum?.amount || 0,
-      totalPageViews: 0,
-      avgSessionDuration: 0,
+      totalPageViews,
+      avgSessionDuration: avgSessionData.length > 0
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
+        : 0,
     },
     update: {
       totalUsers,
@@ -742,6 +853,14 @@ const generateYearlyStats = async (
       platformRevenue: revenueData._sum?.platformFee || 0,
       hostRevenue: revenueData._sum?.hostEarning || 0,
       refundedAmount: refundData._sum?.amount || 0,
+      totalPageViews,
+      avgSessionDuration: avgSessionData.length > 0
+        ? Math.round(
+            avgSessionData.reduce((sum, s) => sum + (s._avg.duration || 0), 0) /
+              avgSessionData.length /
+              1000
+          )
+        : 0,
     },
   });
 
@@ -935,6 +1054,69 @@ const getRealTimeStats = async (): Promise<IRealTimeStats> => {
 };
 
 // ============================================
+// SESSION MONITORING HELPERS
+// ============================================
+
+/**
+ * Get User Activity History
+ * Retrieves past session data from ActivityLog
+ */
+const getUserActivityHistory = async (userId: string) => {
+  const sessions = await prisma.activityLog.findMany({
+    where: {
+      userId,
+      activityType: 'USER_LOGOUT',
+      duration: { not: null },
+    },
+    select: {
+      sessionId: true,
+      duration: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20, // Last 20 sessions
+  });
+
+  return {
+    totalSessions: sessions.length,
+    avgDurationMinutes: sessions.length
+      ? Math.floor(
+          sessions.reduce((sum, s) => sum + (s.duration || 0), 0) /
+            sessions.length /
+            1000 /
+            60
+        )
+      : 0,
+    sessions: sessions.map(s => ({
+      sessionId: s.sessionId,
+      durationMinutes: Math.floor((s.duration || 0) / 1000 / 60),
+      date: s.createdAt.toISOString(),
+    })),
+  };
+};
+
+/**
+ * Get Current User Session
+ * Checks if user has an active session
+ */
+const getCurrentUserSession = async (userId: string) => {
+  const activeSession = await prisma.activityLog.findFirst({
+    where: {
+      userId,
+      sessionId: { not: null },
+      duration: null, // Active session (no end time yet)
+    },
+    select: {
+      sessionId: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return activeSession;
+};
+
+// ============================================
 // EXPORTS
 // ============================================
 
@@ -950,4 +1132,8 @@ export const StatsService = {
   getLatestStats,
   compareStats,
   getRealTimeStats,
+
+  // Session Monitoring
+  getUserActivityHistory,
+  getCurrentUserSession,
 };

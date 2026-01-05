@@ -34,6 +34,42 @@ router.get(
 );
 
 /**
+ * @route   GET /api/stats/sessions/active
+ * @desc    Get all currently active user sessions
+ * @access  Admin
+ */
+router.get(
+  '/sessions/active',
+  checkAuth(),
+  checkPermission('analytics:view_all'),
+  StatsController.getActiveSessions
+);
+
+/**
+ * @route   GET /api/stats/system/metrics
+ * @desc    Get system health and session analytics
+ * @access  Admin
+ */
+router.get(
+  '/system/metrics',
+  checkAuth(),
+  checkPermission('analytics:view_all'),
+  StatsController.getSystemMetrics
+);
+
+/**
+ * @route   GET /api/stats/user/:userId/activity
+ * @desc    Get detailed activity report for a specific user
+ * @access  Admin
+ */
+router.get(
+  '/user/:userId/activity',
+  checkAuth(),
+  checkPermission('analytics:view_all'),
+  StatsController.getUserActivityReport
+);
+
+/**
  * @route   GET /api/stats/compare/:period
  * @desc    Compare stats between current and previous period
  * @access  Admin

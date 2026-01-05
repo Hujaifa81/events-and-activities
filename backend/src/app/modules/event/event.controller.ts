@@ -8,8 +8,9 @@ import {
   logSearch, 
   logActivity 
 } from '@/shared/helper/activityLogger';
-import { ActivityType, EntityType } from '@/shared/constants/activityTypes';
+import { createAuditLogFromRequest } from '@/shared/helper/auditHelper';
 import { EventService } from './event.service';
+import { ActivityType, EntityType } from '@/types';
 
 /**
  * Get All Events (with Search & Filters)
@@ -378,6 +379,287 @@ const getNearbyEvents = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * ADMIN CONTROLLERS
+ */
+
+/**
+ * Get Pending Events (Admin Only)
+ * No audit log needed - just viewing
+ */
+const getPendingEvents = catchAsync(async (req: Request, res: Response) => {
+  // 1. Fetch pending events
+  const result = await EventService.getPendingEvents(req.query);
+
+  // 2. Send response
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Pending events retrieved successfully',
+    meta: result.meta,
+    data: result.data,
+  });
+});
+
+/**
+ * Approve Event (Admin Only)
+ * Creates audit log with before/after states
+ */
+const approveEvent = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const adminId = (req as any).user.userId;
+
+  // 1. Get event before approval (for audit log)
+  const eventBefore = await EventService.getEventById(id);
+
+  // 2. Approve event
+  const event = await EventService.approveEvent(id);
+
+  // 3. Create audit log
+  await createAuditLogFromRequest(req, {
+    userId: adminId,
+    action: 'APPROVE',
+    entityType: 'EVENT',
+    entityId: id,
+    description: `Approved event: ${event.title}`,
+    oldValues: {
+      status: eventBefore.status,
+      publishedAt: eventBefore.publishedAt,
+    },
+    newValues: {
+      status: event.status,
+      publishedAt: event.publishedAt,
+    },
+    metadata: {
+      hostId: event.host.id,
+      hostEmail: event.host.email,
+      eventTitle: event.title,
+      category: event.category.name,
+    },
+    severity: 'INFO',
+  });
+
+  // 4. TODO: Send notification to host
+  // await sendNotification(event.host.id, 'EVENT_APPROVED', {...})
+
+  // 5. Send response
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Event approved successfully',
+    data: event,
+  });
+});
+
+/**
+ * Reject Event (Admin Only)
+ * Creates audit log with rejection reason
+ */
+const rejectEvent = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { reason, notifyHost = true } = req.body;
+  const adminId = (req as any).user.userId;
+
+  // 1. Get event before rejection
+  const eventBefore = await EventService.getEventById(id);
+
+  // 2. Reject event
+  const result = await EventService.rejectEvent(id, reason);
+
+  // 3. Create audit log
+  await createAuditLogFromRequest(req, {
+    userId: adminId,
+    action: 'REJECT',
+    entityType: 'EVENT',
+    entityId: id,
+    description: `Rejected event: ${result.event.title}`,
+    oldValues: {
+      status: eventBefore.status,
+    },
+    newValues: {
+      status: result.event.status,
+      rejectionReason: reason,
+    },
+    metadata: {
+      hostId: result.event.host.id,
+      hostEmail: result.event.host.email,
+      eventTitle: result.event.title,
+      reason,
+      notifyHost,
+    },
+    severity: 'WARNING',
+  });
+
+  // 4. TODO: Send notification to host if requested
+  // if (notifyHost) {
+  //   await sendNotification(result.event.host.id, 'EVENT_REJECTED', { reason })
+  // }
+
+  // 5. Send response
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Event rejected successfully',
+    data: result,
+  });
+});
+
+/**
+ * Feature Event (Admin Only)
+ * Highlights event on homepage
+ */
+const featureEvent = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { featured, featuredUntil, position } = req.body;
+  const adminId = (req as any).user.userId;
+
+  // 1. Feature/unfeature event
+  const event = await EventService.featureEvent(
+    id,
+    featured,
+    featuredUntil,
+    position
+  );
+
+  // 2. Create audit log
+  await createAuditLogFromRequest(req, {
+    userId: adminId,
+    action: featured ? 'PUBLISH' : 'UNPUBLISH',
+    entityType: 'EVENT',
+    entityId: id,
+    description: `${featured ? 'Featured' : 'Unfeatured'} event: ${event.title}`,
+    newValues: {
+      featured,
+      featuredUntil,
+      position,
+    },
+    metadata: {
+      eventTitle: event.title,
+      hostId: event.host.id,
+    },
+    severity: 'INFO',
+  });
+
+  // 3. Send response
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: `Event ${featured ? 'featured' : 'unfeatured'} successfully`,
+    data: event,
+  });
+});
+
+/**
+ * Suspend Event (Admin Only)
+ * Temporarily disables event
+ */
+const suspendEvent = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { reason, suspendUntil, notifyHost = true } = req.body;
+  const adminId = (req as any).user.userId;
+
+  // 1. Get event before suspension
+  const eventBefore = await EventService.getEventById(id);
+
+  // 2. Suspend event
+  const result = await EventService.suspendEvent(id, reason, suspendUntil);
+
+  // 3. Create audit log
+  await createAuditLogFromRequest(req, {
+    userId: adminId,
+    action: 'SUSPEND',
+    entityType: 'EVENT',
+    entityId: id,
+    description: `Suspended event: ${result.event.title}`,
+    oldValues: {
+      status: eventBefore.status,
+    },
+    newValues: {
+      status: result.event.status,
+      suspensionReason: reason,
+      suspendUntil,
+    },
+    metadata: {
+      hostId: result.event.host.id,
+      hostEmail: result.event.host.email,
+      eventTitle: result.event.title,
+      reason,
+      suspendUntil,
+      affectedBookings: result.affectedBookings,
+      notifyHost,
+    },
+    severity:
+      result.affectedBookings > 0 ? 'CRITICAL' : 'WARNING',
+  });
+
+  // 4. TODO: Send notifications
+  // - Notify host
+  // - Notify customers with bookings
+
+  // 5. Send response
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Event suspended successfully',
+    data: result,
+  });
+});
+
+/**
+ * Admin Delete Event (Admin Only)
+ * Permanently removes event with audit trail
+ */
+const adminDeleteEvent = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const adminId = (req as any).user.userId;
+
+  // 1. Get full event details before deletion
+  const eventBefore = await EventService.getEventById(id);
+
+  // 2. Delete event
+  const result = await EventService.adminDeleteEvent(id);
+
+  // 3. Create critical audit log (full event snapshot)
+  await createAuditLogFromRequest(req, {
+    userId: adminId,
+    action: 'DELETE',
+    entityType: 'EVENT',
+    entityId: id,
+    description: `Deleted event: ${eventBefore.title}`,
+    oldValues: {
+      ...eventBefore,
+      // Include critical info
+      bookingCount: result.affectedBookings,
+      reviewCount: result.affectedReviews,
+    },
+    metadata: {
+      hostId: eventBefore.host.id,
+      hostEmail: eventBefore.host.email,
+      affectedBookings: result.affectedBookings,
+      affectedReviews: result.affectedReviews,
+      deletedBy: adminId,
+    },
+    severity: 'CRITICAL',
+  });
+
+  // 4. TODO: Handle cascading effects
+  // - Cancel all bookings
+  // - Process refunds
+  // - Send notifications
+
+  // 5. Send response
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Event deleted successfully',
+    data: {
+      deletedEvent: result.event,
+      affectedBookings: result.affectedBookings,
+      affectedReviews: result.affectedReviews,
+    },
+  });
+});
+
 export const EventController = {
   getAllEvents,
   getEventById,
@@ -389,4 +671,11 @@ export const EventController = {
   shareEvent,
   getEventsByCategory,
   getNearbyEvents,
+  // Admin controllers
+  getPendingEvents,
+  approveEvent,
+  rejectEvent,
+  featureEvent,
+  suspendEvent,
+  adminDeleteEvent,
 };

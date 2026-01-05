@@ -3,7 +3,7 @@ import { createServer, Server } from 'http';
 import app from './app';
 import { prisma } from '@/shared'
 import { envVars, redis, closeRedis } from '@/config';
-import { setupStatsCronJobs } from './app/modules/stats/stats.cron';
+import { initializeCronJobs } from './app/cron';
 
 
 async function connectToDB() {
@@ -41,8 +41,8 @@ class ServerCreator {
           }
         });
         
-        // Initialize cron jobs for stats generation
-        setupStatsCronJobs();
+        // Initialize all cron jobs
+        initializeCronJobs();
         
         console.log(`Server is listening on port:${envVars.PORT}`);
         resolve();

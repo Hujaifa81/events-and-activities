@@ -217,17 +217,20 @@ export const logPageView = async (
  * Convenience function for logging search queries
  * 
  * Usage:
- * await logSearch(query, resultsCount, req);
+ * await logSearch(query, resultsCount, req, userId?, duration?);
  */
 export const logSearch = async (
   query: string,
   resultsCount: number,
-  req: Request
+  req: Request,
+  userId?: string,
+  duration?: number
 ): Promise<void> => {
   await logActivity({
     activityType: ActivityType.SEARCH,
     activityName: `Search: "${query}"`,
-    userId: req.user?.id,
+    userId: userId || req.user?.id,
+    duration,
     metadata: {
       query,
       resultsCount,

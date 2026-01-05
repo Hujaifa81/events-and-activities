@@ -2,6 +2,8 @@
 import express from 'express';
 import { EventController } from './event.controller';
 import { checkAuth } from '@/app/middlewares';
+import { validateRequest } from '@/app/middlewares/validateRequest';
+import { EventValidation } from './event.validation';
 
 const router = express.Router();
 
@@ -26,21 +28,70 @@ router.get('/:id', EventController.getEventById);
  */
 
 // POST /api/v1/events - Create new event
-router.post('/', checkAuth, EventController.createEvent);
+router.post('/', checkAuth('HOST', 'ADMIN'), EventController.createEvent);
 
 // PUT /api/v1/events/:id - Update event
-router.put('/:id', checkAuth, EventController.updateEvent);
+router.put('/:id', checkAuth('HOST', 'ADMIN'), EventController.updateEvent);
 
 // DELETE /api/v1/events/:id - Delete event
-router.delete('/:id', checkAuth, EventController.deleteEvent);
+router.delete('/:id', checkAuth('HOST', 'ADMIN'), EventController.deleteEvent);
 
 // POST /api/v1/events/:id/publish - Publish event
-router.post('/:id/publish', checkAuth, EventController.publishEvent);
+router.post('/:id/publish', checkAuth('HOST', 'ADMIN'), EventController.publishEvent);
 
 // POST /api/v1/events/:id/save - Save event to wishlist
-router.post('/:id/save', checkAuth, EventController.saveEvent);
+router.post('/:id/save', checkAuth('USER', 'HOST', 'ADMIN'), EventController.saveEvent);
 
 // POST /api/v1/events/:id/share - Share event
 router.post('/:id/share', EventController.shareEvent);
+
+/**
+ * Admin Routes (Admin/Moderator only)
+ */
+
+// GET /api/v1/events/admin/pending - Get pending events
+router.get(
+  '/admin/pending',
+  checkAuth('ADMIN', 'MODERATOR'),
+  EventController.getPendingEvents
+);
+
+// PUT /api/v1/events/:id/approve - Approve event
+router.put(
+  '/:id/approve',
+  checkAuth('ADMIN', 'MODERATOR'),
+  EventController.approveEvent
+);
+
+// PUT /api/v1/events/:id/reject - Reject event
+router.put(
+  '/:id/reject',
+  checkAuth('ADMIN', 'MODERATOR'),
+  validateRequest(EventValidation.rejectEvent),
+  EventController.rejectEvent
+);
+
+// PUT /api/v1/events/:id/feature - Feature/unfeature event
+router.put(
+  '/:id/feature',
+  checkAuth('ADMIN'),
+  validateRequest(EventValidation.featureEvent),
+  EventController.featureEvent
+);
+
+// PUT /api/v1/events/:id/suspend - Suspend event
+router.put(
+  '/:id/suspend',
+  checkAuth('ADMIN', 'MODERATOR'),
+  validateRequest(EventValidation.suspendEvent),
+  EventController.suspendEvent
+);
+
+// DELETE /api/v1/events/:id/admin - Admin delete (permanent)
+router.delete(
+  '/:id/admin',
+  checkAuth('ADMIN', 'SUPER_ADMIN'),
+  EventController.adminDeleteEvent
+);
 
 export const EventRoutes = router;

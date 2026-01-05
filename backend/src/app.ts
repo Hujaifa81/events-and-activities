@@ -2,7 +2,7 @@ import express, { urlencoded } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { corsOptions, rootResponse } from "@/shared";
-import { globalErrorHandler, notFound, activityLoggerMiddleware, sessionDurationTracker } from "@/app/middlewares";
+import { globalErrorHandler, notFound, activityLoggerMiddleware, sessionDurationTracker, apiRateLimiterMiddleware } from "@/app/middlewares";
 import router from "@/app/routes";
 
 // import { paymentRoutes } from "@/app/modules";
@@ -20,11 +20,14 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(urlencoded({ extended: true }));
 
+// Rate limiting (protect API from abuse)
+app.use('/api/v1', apiRateLimiterMiddleware);
+
 // Activity tracking (automatic page view logging)
 app.use(activityLoggerMiddleware);
 app.use(sessionDurationTracker);
 
-app.use("/api/v1", router);
+app.use('/api/v1', router);
 app.use(notFound);
 app.use(globalErrorHandler);
 

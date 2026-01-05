@@ -9,6 +9,14 @@ const moduleRoutes: { path: string; route: Router }[] = [
     {
         path: '/activity',
         route: modules.ActivityRoutes
+    },
+    {
+        path: '/events',
+        route: modules.EventRoutes
+    },
+    {
+        path: '/audit-logs',
+        route: modules.AuditRoutes
     }
 ];
 

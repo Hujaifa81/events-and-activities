@@ -5,6 +5,8 @@ import { StatsService } from './stats.service';
 import { catchAsync, sendResponse } from '@/shared';
 import { StatsPeriod } from './stats.interface';
 import { startOfWeek, startOfMonth, startOfYear, startOfDay } from 'date-fns';
+import { getSessionDuration } from '@/shared/helper';
+import { redis } from '@/config';
 
 /**
  * Get Dashboard Stats by Period
@@ -143,10 +145,143 @@ const generateStats = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Get Active Sessions
+ * GET /api/stats/sessions/active
+ * @access Admin only
+ * Returns all currently active user sessions with duration info
+ */
+const getActiveSessions = catchAsync(async (req: Request, res: Response) => {
+  const sessionKeys = await redis.keys('session:*');
+
+  const sessions = await Promise.all(
+    sessionKeys.map(async key => {
+      const sessionId = key.replace('session:', '');
+      const duration = await getSessionDuration(sessionId);
+      const sessionData = await redis.get(key);
+
+      if (sessionData) {
+        const session = JSON.parse(sessionData);
+        return {
+          sessionId,
+          durationMs: duration,
+          durationMinutes: Math.floor(duration / 60000),
+          requestCount: session.requestCount,
+          startedAt: new Date(session.startTime).toISOString(),
+          lastActivity: new Date(session.lastActivity).toISOString(),
+        };
+      }
+      return null;
+    })
+  );
+
+  const validSessions = sessions.filter(s => s !== null);
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'Active sessions retrieved successfully',
+    data: {
+      totalActiveSessions: validSessions.length,
+      sessions: validSessions,
+    },
+  });
+});
+
+/**
+ * Get System Metrics
+ * GET /api/stats/system/metrics
+ * @access Admin only
+ * Returns system health and session analytics
+ */
+const getSystemMetrics = catchAsync(async (req: Request, res: Response) => {
+  const sessionKeys = await redis.keys('session:*');
+
+  let totalDuration = 0;
+  let totalRequests = 0;
+
+  for (const key of sessionKeys) {
+    const sessionId = key.replace('session:', '');
+    const duration = await getSessionDuration(sessionId);
+    const sessionData = await redis.get(key);
+
+    if (sessionData) {
+      const session = JSON.parse(sessionData);
+      totalDuration += duration;
+      totalRequests += session.requestCount;
+    }
+  }
+
+  const avgDuration =
+    sessionKeys.length > 0 ? totalDuration / sessionKeys.length : 0;
+  const avgRequests =
+    sessionKeys.length > 0 ? totalRequests / sessionKeys.length : 0;
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: 'System metrics retrieved successfully',
+    data: {
+      activeUsers: sessionKeys.length,
+      avgSessionDuration: Math.floor(avgDuration / 60000), // minutes
+      avgRequestsPerSession: Math.round(avgRequests),
+      totalActiveRequests: totalRequests,
+      serverStatus: 'healthy',
+    },
+  });
+});
+
+/**
+ * Get User Activity Report
+ * GET /api/stats/user/:userId/activity
+ * @access Admin only
+ * Returns detailed activity report for a specific user
+ */
+const getUserActivityReport = catchAsync(
+  async (req: Request, res: Response) => {
+    const { userId } = req.params;
+
+    // Get historical sessions from database
+    const pastSessions = await StatsService.getUserActivityHistory(userId);
+
+    // Check if user is currently active
+    const currentSession = await StatsService.getCurrentUserSession(userId);
+
+    let currentDuration = 0;
+    if (currentSession?.sessionId) {
+      currentDuration = await getSessionDuration(currentSession.sessionId);
+    }
+
+    sendResponse(res, {
+      statusCode: 200,
+      success: true,
+      message: 'User activity report retrieved successfully',
+      data: {
+        userId,
+        currentSession:
+          currentDuration && currentSession
+            ? {
+                isActive: true,
+                sessionId: currentSession.sessionId,
+                durationMinutes: Math.floor(currentDuration / 60000),
+                startedAt: new Date(
+                  Date.now() - currentDuration
+                ).toISOString(),
+              }
+            : { isActive: false },
+        history: pastSessions,
+      },
+    });
+  }
+);
+
 export const StatsController = {
   getStatsByPeriod,
   getLatestStats,
   compareStats,
   getRealTimeStats,
   generateStats,
+  getActiveSessions,
+  getSystemMetrics,
+  getUserActivityReport,
 };

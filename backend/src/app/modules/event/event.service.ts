@@ -3,7 +3,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/shared/utils';
-import ApiError from '@/app/errors/ApiError';
+import { ApiError } from '@/app/errors';
 
 interface IEventFilters {
   search?: string;
@@ -421,6 +421,274 @@ const incrementSaveCount = async (id: string) => {
   });
 };
 
+/**
+ * ADMIN ACTIONS
+ */
+
+/**
+ * Get pending events (awaiting approval)
+ */
+const getPendingEvents = async (filters: IEventFilters) => {
+  const {
+    page = 1,
+    limit = 10,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+  } = filters;
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const where: Prisma.EventWhereInput = {
+    status: 'PENDING_APPROVAL',
+    deletedAt: null,
+  };
+
+  const [events, total] = await Promise.all([
+    prisma.event.findMany({
+      where,
+      skip,
+      take: Number(limit),
+      orderBy: { [sortBy]: sortOrder },
+      include: {
+        host: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            profile: {
+              select: {
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
+    }),
+    prisma.event.count({ where }),
+  ]);
+
+  return {
+    data: events,
+    meta: {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    },
+  };
+};
+
+/**
+ * Approve event (Admin only)
+ */
+const approveEvent = async (id: string) => {
+  const event = await prisma.event.findUnique({
+    where: { id, deletedAt: null },
+  });
+
+  if (!event) {
+    throw new ApiError(404, 'Event not found');
+  }
+
+  if (event.status !== 'PENDING_APPROVAL') {
+    throw new ApiError(400, 'Event is not pending approval');
+  }
+
+  const approvedEvent = await prisma.event.update({
+    where: { id },
+    data: {
+      status: 'PUBLISHED',
+      publishedAt: new Date(),
+    },
+    include: {
+      host: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+        },
+      },
+      category: true,
+    },
+  });
+
+  return approvedEvent;
+};
+
+/**
+ * Reject event (Admin only)
+ */
+const rejectEvent = async (id: string, reason: string) => {
+  const event = await prisma.event.findUnique({
+    where: { id, deletedAt: null },
+  });
+
+  if (!event) {
+    throw new ApiError(404, 'Event not found');
+  }
+
+  // Update event status and store rejection reason in metadata
+  const rejectedEvent = await prisma.event.update({
+    where: { id },
+    data: {
+      status: 'CANCELLED',
+      cancelledAt: new Date(),
+    },
+    include: {
+      host: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+        },
+      },
+      category: true,
+    },
+  });
+
+  return { event: rejectedEvent, reason };
+};
+
+/**
+ * Feature event on homepage (Admin only)
+ */
+const featureEvent = async (
+  id: string,
+  featured: boolean,
+  featuredUntil?: string,
+  position?: number
+) => {
+  const event = await prisma.event.findUnique({
+    where: { id, deletedAt: null },
+  });
+
+  if (!event) {
+    throw new ApiError(404, 'Event not found');
+  }
+
+  if (event.status !== 'PUBLISHED') {
+    throw new ApiError(400, 'Only published events can be featured');
+  }
+
+  // Update event (Note: You may need to add featured fields to Event model)
+  const featuredEvent = await prisma.event.update({
+    where: { id },
+    data: {
+      // Add these fields to your Event schema if not present
+      // featured,
+      // featuredUntil: featuredUntil ? new Date(featuredUntil) : null,
+      // featuredPosition: position,
+    },
+    include: {
+      host: {
+        select: {
+          id: true,
+          username: true,
+        },
+      },
+      category: true,
+    },
+  });
+
+  return featuredEvent;
+};
+
+/**
+ * Suspend event (Admin only)
+ */
+const suspendEvent = async (
+  id: string,
+  reason: string,
+  suspendUntil?: string
+) => {
+  const event = await prisma.event.findUnique({
+    where: { id, deletedAt: null },
+    include: {
+      _count: {
+        select: {
+          bookings: true,
+        },
+      },
+    },
+  });
+
+  if (!event) {
+    throw new ApiError(404, 'Event not found');
+  }
+
+  // Update event to suspended status
+  const suspendedEvent = await prisma.event.update({
+    where: { id },
+    data: {
+      status: 'CANCELLED', // Or add SUSPENDED status to EventStatus enum
+      cancelledAt: new Date(),
+    },
+    include: {
+      host: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+        },
+      },
+      category: true,
+      _count: {
+        select: {
+          bookings: true,
+        },
+      },
+    },
+  });
+
+  return {
+    event: suspendedEvent,
+    reason,
+    suspendUntil,
+    affectedBookings: suspendedEvent._count.bookings,
+  };
+};
+
+/**
+ * Admin delete event (hard delete with audit)
+ */
+const adminDeleteEvent = async (id: string) => {
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: {
+      _count: {
+        select: {
+          bookings: true,
+          reviews: true,
+        },
+      },
+    },
+  });
+
+  if (!event) {
+    throw new ApiError(404, 'Event not found');
+  }
+
+  // Soft delete (preserve data for audit)
+  await prisma.event.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+
+  return {
+    event,
+    affectedBookings: event._count.bookings,
+    affectedReviews: event._count.reviews,
+  };
+};
+
 export const EventService = {
   getAllEvents,
   getEventById,
@@ -434,4 +702,12 @@ export const EventService = {
   incrementViewCount,
   incrementShareCount,
   incrementSaveCount,
+  // Admin methods
+  getPendingEvents,
+  approveEvent,
+  rejectEvent,
+  featureEvent,
+  suspendEvent,
+  adminDeleteEvent,
 };
+
