@@ -4,6 +4,7 @@ import { StatsRoutes } from './stats/stats.routes';
 import { ActivityRoutes } from './activity/activity.routes';
 import { EventRoutes } from './event/event.routes';
 import { AuditRoutes } from './audit/audit.routes';
+import { SystemSettingRoutes } from './systemSetting/systemSetting.routes';
 
 const routes = [
   {
@@ -32,4 +33,4 @@ const routes = [
 export default routes;
 
 // Named exports for easy access
-export { PermissionRoutes, StatsRoutes, ActivityRoutes, EventRoutes, AuditRoutes };
+export { PermissionRoutes, StatsRoutes, ActivityRoutes, EventRoutes, AuditRoutes, SystemSettingRoutes };

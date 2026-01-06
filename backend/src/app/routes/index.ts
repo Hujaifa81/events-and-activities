@@ -17,6 +17,10 @@ const moduleRoutes: { path: string; route: Router }[] = [
     {
         path: '/audit-logs',
         route: modules.AuditRoutes
+    },
+    {
+        path: '/settings',
+        route: modules.SystemSettingRoutes
     }
 ];
 

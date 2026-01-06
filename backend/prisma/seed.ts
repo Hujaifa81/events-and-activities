@@ -240,23 +240,288 @@ async function seedUsers() {
 async function seedSystemSettings() {
   console.log('⚙️ Seeding system settings...');
 
-  const settings = [
-    { key: 'platform_name', value: 'Events & Activities Platform', category: 'GENERAL', valueType: 'STRING', isPublic: true },
-    { key: 'platform_commission_rate', value: '5', category: 'PAYMENT', valueType: 'NUMBER', description: 'Platform commission percentage' },
-    { key: 'max_events_per_host', value: '50', category: 'GENERAL', valueType: 'NUMBER', description: 'Maximum events a host can create' },
-    { key: 'enable_ai_recommendations', value: 'true', category: 'FEATURE_FLAGS', valueType: 'BOOLEAN', isPublic: true },
-    { key: 'maintenance_mode', value: 'false', category: 'SYSTEM', valueType: 'BOOLEAN' },
+  const initialSettings = [
+    // ============================================
+    // PAYMENT SETTINGS
+    // ============================================
+    {
+      key: 'PLATFORM_FEE_PERCENTAGE',
+      value: '5',
+      valueType: 'NUMBER',
+      category: 'PAYMENT',
+      description: 'Platform commission percentage on bookings',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'MIN_BOOKING_AMOUNT',
+      value: '100',
+      valueType: 'NUMBER',
+      category: 'PAYMENT',
+      description: 'Minimum booking amount in BDT',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'MAX_BOOKING_AMOUNT',
+      value: '50000',
+      valueType: 'NUMBER',
+      category: 'PAYMENT',
+      description: 'Maximum booking amount in BDT',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'REFUND_DEADLINE_DAYS',
+      value: '7',
+      valueType: 'NUMBER',
+      category: 'PAYMENT',
+      description: 'Days before event to request refund',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'AUTO_REFUND_ENABLED',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'PAYMENT',
+      description: 'Enable automatic refund processing',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'PAYMENT_GATEWAY',
+      value: 'STRIPE',
+      valueType: 'STRING',
+      category: 'PAYMENT',
+      description: 'Active payment gateway (STRIPE, BKASH, NAGAD)',
+      isPublic: false,
+      isEditable: true,
+    },
+
+    // ============================================
+    // FEATURE FLAGS
+    // ============================================
+    {
+      key: 'ENABLE_SOCIAL_LOGIN',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'FEATURE_FLAGS',
+      description: 'Enable Google/Facebook login',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'ENABLE_CHAT',
+      value: 'false',
+      valueType: 'BOOLEAN',
+      category: 'FEATURE_FLAGS',
+      description: 'Enable chat feature between users/hosts',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'ENABLE_WISHLISTS',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'FEATURE_FLAGS',
+      description: 'Enable event wishlist feature',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'ENABLE_REVIEWS',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'FEATURE_FLAGS',
+      description: 'Enable event review/rating feature',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'MAINTENANCE_MODE',
+      value: 'false',
+      valueType: 'BOOLEAN',
+      category: 'FEATURE_FLAGS',
+      description: 'Put platform in maintenance mode',
+      isPublic: true,
+      isEditable: true,
+    },
+
+    // ============================================
+    // BUSINESS RULES
+    // ============================================
+    {
+      key: 'MAX_EVENTS_PER_HOST',
+      value: '10',
+      valueType: 'NUMBER',
+      category: 'BUSINESS_RULES',
+      description: 'Maximum events a host can create (free plan)',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'MAX_ATTENDEES_PER_EVENT',
+      value: '500',
+      valueType: 'NUMBER',
+      category: 'BUSINESS_RULES',
+      description: 'Maximum attendees per event',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'EVENT_APPROVAL_REQUIRED',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'BUSINESS_RULES',
+      description: 'Require admin approval for new events',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'AUTO_APPROVE_VERIFIED_HOSTS',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'BUSINESS_RULES',
+      description: 'Auto-approve events from verified hosts',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'FEATURED_EVENT_PRICE',
+      value: '500',
+      valueType: 'NUMBER',
+      category: 'BUSINESS_RULES',
+      description: 'Price to feature an event (BDT)',
+      isPublic: true,
+      isEditable: true,
+    },
+
+    // ============================================
+    // EMAIL SETTINGS
+    // ============================================
+    {
+      key: 'SUPPORT_EMAIL',
+      value: 'support@ask2buy.com',
+      valueType: 'STRING',
+      category: 'EMAIL',
+      description: 'Support email address',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'NOTIFICATION_EMAIL_ENABLED',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'EMAIL',
+      description: 'Enable email notifications',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'EMAIL_SIGNATURE',
+      value: 'Best regards,\\nThe Ask2Buy Team',
+      valueType: 'STRING',
+      category: 'EMAIL',
+      description: 'Default email signature',
+      isPublic: false,
+      isEditable: true,
+    },
+
+    // ============================================
+    // GENERAL SETTINGS (Public)
+    // ============================================
+    {
+      key: 'APP_NAME',
+      value: 'Ask2Buy',
+      valueType: 'STRING',
+      category: 'GENERAL',
+      description: 'Application name',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'CONTACT_PHONE',
+      value: '+880123456789',
+      valueType: 'STRING',
+      category: 'GENERAL',
+      description: 'Contact phone number',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'CONTACT_EMAIL',
+      value: 'hello@ask2buy.com',
+      valueType: 'STRING',
+      category: 'GENERAL',
+      description: 'Contact email address',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'FACEBOOK_URL',
+      value: 'https://facebook.com/ask2buy',
+      valueType: 'STRING',
+      category: 'GENERAL',
+      description: 'Facebook page URL',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'TWITTER_URL',
+      value: 'https://twitter.com/ask2buy',
+      valueType: 'STRING',
+      category: 'GENERAL',
+      description: 'Twitter profile URL',
+      isPublic: true,
+      isEditable: true,
+    },
+    {
+      key: 'TERMS_URL',
+      value: 'https://ask2buy.com/terms',
+      valueType: 'STRING',
+      category: 'GENERAL',
+      description: 'Terms and conditions URL',
+      isPublic: true,
+      isEditable: true,
+    },
+
+    // ============================================
+    // NOTIFICATION SETTINGS
+    // ============================================
+    {
+      key: 'SMS_NOTIFICATION_ENABLED',
+      value: 'false',
+      valueType: 'BOOLEAN',
+      category: 'NOTIFICATION',
+      description: 'Enable SMS notifications',
+      isPublic: false,
+      isEditable: true,
+    },
+    {
+      key: 'PUSH_NOTIFICATION_ENABLED',
+      value: 'true',
+      valueType: 'BOOLEAN',
+      category: 'NOTIFICATION',
+      description: 'Enable push notifications',
+      isPublic: false,
+      isEditable: true,
+    },
   ];
 
-  for (const setting of settings) {
+  for (const setting of initialSettings) {
     await prisma.systemSetting.upsert({
       where: { key: setting.key },
-      update: { value: setting.value },
+      update: {
+        // Update only metadata, preserve customized values
+        description: setting.description,
+        isPublic: setting.isPublic,
+      },
       create: setting,
     });
   }
 
-  console.log(`✅ Created ${settings.length} system settings`);
+  console.log(`✅ Created ${initialSettings.length} system settings`);
 }
 
 // ============================================

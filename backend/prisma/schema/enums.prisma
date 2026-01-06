@@ -334,7 +334,7 @@ enum BadgeRarity {
   LEGENDARY
 }
 
-// Admin & Audit Enums
+//  Audit Enums
 enum AuditAction {
   CREATE
   UPDATE
@@ -352,11 +352,14 @@ enum AuditAction {
 enum AuditEntityType {
   USER
   EVENT
+  BOOKING
   PAYMENT
+  REFUND
   REVIEW
   REPORT
   SUBSCRIPTION
   SYSTEM_SETTING
+  PAYOUT_ACCOUNT
 }
 
 // Trust & Safety Enums

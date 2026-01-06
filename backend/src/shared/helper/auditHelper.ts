@@ -1,9 +1,102 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Request } from 'express';
 import { prisma } from '@/shared/utils/prisma';
-import { UserRole } from '@prisma/client';
+import { UserRole, Prisma, AuditAction, AuditEntityType } from '@prisma/client';
+import geoip from 'geoip-lite';
+/**
+ * ============================================
+ * AUDIT LOGGING SYSTEM - Implementation Guide
+ * ============================================
+ * 
+ * WHEN TO ADD AUDIT LOGS:
+ * 
+ * 1. LOGIN/LOGOUT (auth.service.ts)
+ *    - ✅ After successful login
+ *    - ✅ After failed login attempts (track brute force)
+ *    - ✅ On logout
+ *    Example:
+ *    await createAuditLog({
+ *      userId: user.id,
+ *      action: 'LOGIN',
+ *      entityType: 'USER',
+ *      entityId: user.id,
+ *      description: 'User logged in',
+ *      ipAddress: req.ip,
+ *      userAgent: req.headers['user-agent']
+ *    });
+ * 
+ * 2. BAN/RESTORE (admin.service.ts - CREATE THESE METHODS)
+ *    - ✅ When admin bans a user (CRITICAL)
+ *    - ✅ When admin restores banned user (WARNING)
+ *    Example:
+ *    await createAuditLog({
+ *      userId: adminId,
+ *      action: 'BAN',
+ *      entityType: 'USER',
+ *      entityId: bannedUserId,
+ *      description: `Banned user: ${user.name}`,
+ *      metadata: { reason: 'spam' }
+ *    });
+ * 
+ * 3. VERIFY (user.service.ts)
+ *    - ✅ Email verification
+ *    - ✅ Phone verification
+ *    - ✅ ID verification
+ *    Example:
+ *    await createAuditLog({
+ *      userId: user.id,
+ *      action: 'VERIFY',
+ *      entityType: 'USER',
+ *      entityId: user.id,
+ *      description: 'Email verified',
+ *      metadata: { verificationType: 'email' }
+ *    });
+ * 
+ * 4. EVENT CREATION (event.controller.ts - TODO)
+ *    - ✅ When HOST creates event
+ *    Example:
+ *    await createAuditLog({
+ *      userId: hostId,
+ *      action: 'CREATE',
+ *      entityType: 'EVENT',
+ *      entityId: event.id,
+ *      description: `Created event: ${event.title}`,
+ *      newValues: { title, price, capacity }
+ *    });
+ * 
+ * 5. BOOKING CREATION/CANCEL (booking.controller.ts - TODO)
+ *    - ✅ When USER creates booking
+ *    - ✅ When USER cancels booking (WARNING)
+ *    Example:
+ *    await createAuditLog({
+ *      userId: user.id,
+ *      action: 'CREATE', // or 'DELETE' for cancel
+ *      entityType: 'BOOKING',
+ *      entityId: booking.id,
+ *      description: 'Booking created'
+ *    });
+ * 
+ * 6. ACCOUNT DELETION (user.service.ts - TODO)
+ *    - ✅ When HOST/USER deletes account (CRITICAL)
+ *    Example:
+ *    await createAuditLog({
+ *      userId: user.id,
+ *      action: 'DELETE',
+ *      entityType: 'USER',
+ *      entityId: user.id,
+ *      description: 'Account deleted',
+ *      oldValues: { email, role, totalEvents }
+ *    });
+ * 
+ * REMEMBER: Audit logging failures should NOT break main operations!
+ * The createAuditLog function handles errors internally.
+ */
 
 /**
  * Audit Configuration - Defines which actions should be audited for each role
+ * Uses generic actions from AuditAction enum + entityType for context
+ * 
+ * NOTE: LOGIN/LOGOUT are automatically audited for all roles (handled separately)
  */
 const AUDIT_ACTIONS = {
   // Admin & Moderator = Everything
@@ -11,90 +104,91 @@ const AUDIT_ACTIONS = {
   SUPER_ADMIN: ['*'],
   MODERATOR: ['*'],
 
-  // Host = Business-critical actions
-  HOST: [
-    'EVENT_CREATE',
-    'EVENT_DELETE',
-    'EVENT_CANCEL',
-    'EVENT_PRICE_INCREASE',
-    'EVENT_CAPACITY_REDUCE',
-    'PAYOUT_REQUEST',
-    'PAYOUT_ACCOUNT_ADD',
-    'PAYOUT_ACCOUNT_UPDATE',
-    'DISPUTE_RESPONSE',
-  ],
+  // Host = Business-critical actions (by entity type)
+  HOST: {
+    [AuditEntityType.EVENT]: [AuditAction.CREATE, AuditAction.DELETE, AuditAction.UPDATE],
+    [AuditEntityType.PAYMENT]: [AuditAction.CREATE],
+    [AuditEntityType.USER]: [AuditAction.DELETE, AuditAction.VERIFY],
+  },
 
   // User = Financial and safety actions
-  USER: [
-    'BOOKING_CREATE',
-    'BOOKING_CANCEL',
-    'PAYMENT_CREATE',
-    'PAYMENT_FAILED',
-    'REFUND_REQUEST',
-    'CHARGEBACK_FILED',
-    'ACCOUNT_DELETE',
-    'REPORT_CREATE',
-    'BLOCK_USER',
-    'REVIEW_CREATE',
-  ],
+  USER: {
+    [AuditEntityType.BOOKING]: [AuditAction.CREATE, AuditAction.DELETE],
+    [AuditEntityType.PAYMENT]: [AuditAction.CREATE],
+    [AuditEntityType.REFUND]: [AuditAction.CREATE],
+    [AuditEntityType.USER]: [AuditAction.DELETE, AuditAction.VERIFY],
+    [AuditEntityType.REPORT]: [AuditAction.CREATE],
+  },
 };
 
 /**
- * Check if an action should be audited based on user role
+ * Check if an action should be audited based on user role, action, and entity type
  */
 export const shouldAudit = (
   userRole: UserRole,
-  action: string
+  action: AuditAction,
+  entityType?: AuditEntityType
 ): boolean => {
+  // Security-critical actions are ALWAYS audited for all users
+  const alwaysAuditActions: AuditAction[] = [
+    AuditAction.LOGIN,
+    AuditAction.LOGOUT,
+    AuditAction.BAN,
+    AuditAction.RESTORE,
+  ];
+  if (alwaysAuditActions.includes(action)) return true;
+
   const rules = AUDIT_ACTIONS[userRole];
   if (!rules) return false;
 
   // Admin/Moderator audit everything
-  if (rules.includes('*')) return true;
+  if (Array.isArray(rules) && rules.includes('*')) return true;
 
-  // Check specific actions
-  return rules.includes(action);
+  // For HOST/USER, check entity-specific rules
+  if (typeof rules === 'object' && entityType) {
+    const entityRules = (rules as Record<AuditEntityType, AuditAction[]>)[entityType];
+    return entityRules ? entityRules.includes(action) : false;
+  }
+
+  return false;
 };
 
 /**
- * Calculate severity based on action type and metadata
+ * Calculate severity based on action, entity, and metadata
  */
 export const calculateSeverity = (
-  action: string,
+  action: AuditAction,
+  entityType?: AuditEntityType,
   metadata?: any
 ): 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' => {
-  // CRITICAL - Legal/Financial Risk
-  if (action === 'ACCOUNT_DELETE') return 'CRITICAL';
-  if (action === 'CHARGEBACK_FILED') return 'CRITICAL';
-  if (action === 'EVENT_DELETE' && metadata?.bookingCount > 0)
+  // CRITICAL - Legal/Financial/Security Risk
+  if (action === AuditAction.DELETE && entityType === AuditEntityType.USER) return 'CRITICAL';
+  if (action === AuditAction.DELETE && entityType === AuditEntityType.EVENT && metadata?.bookingCount > 0)
     return 'CRITICAL';
-  if (action === 'BAN' || action === 'SUSPEND') return 'CRITICAL';
+  if (action === AuditAction.BAN || action === AuditAction.SUSPEND) return 'CRITICAL';
+  if (action === AuditAction.LOGIN && metadata?.failedAttempts >= 3) return 'CRITICAL';
+  if (action === AuditAction.LOGIN && metadata?.suspiciousLocation) return 'CRITICAL';
 
   // WARNING - Business Impact
-  if (action === 'EVENT_CANCEL' && metadata?.bookingCount > 5)
+  if (action === AuditAction.DELETE && entityType === AuditEntityType.BOOKING) return 'WARNING';
+  if (action === AuditAction.DELETE && entityType === AuditEntityType.EVENT) return 'WARNING';
+  if (action === AuditAction.REJECT) return 'WARNING';
+  if (action === AuditAction.UPDATE && entityType === AuditEntityType.EVENT && metadata?.priceIncreasePercent > 20)
     return 'WARNING';
-  if (
-    action === 'BOOKING_CANCEL' &&
-    metadata?.hoursBeforeEvent &&
-    metadata.hoursBeforeEvent < 24
-  )
-    return 'WARNING';
-  if (action === 'REFUND_REQUEST') return 'WARNING';
-  if (action === 'REPORT_CREATE') return 'WARNING';
-  if (action === 'REJECT') return 'WARNING';
-  if (action === 'EVENT_PRICE_INCREASE' && metadata?.increasePercent > 20)
-    return 'WARNING';
+  if (action === AuditAction.CREATE && entityType === AuditEntityType.REPORT) return 'WARNING';
+  if (action === AuditAction.CREATE && entityType === AuditEntityType.REFUND) return 'WARNING';
+  if (action === AuditAction.RESTORE) return 'WARNING';
 
   // INFO - Normal Operations
-  return 'INFO';
+  return 'INFO'; // LOGIN, LOGOUT, VERIFY, CREATE, UPDATE, etc.
 };
 
 /**
  * Generate a diff between old and new values
  */
 export const compareChanges = (
-  oldValues: Record<string, any>,
-  newValues: Record<string, any>
+  oldValues: any,
+  newValues: any
 ): Record<string, { old: any; new: any }> => {
   const changes: Record<string, { old: any; new: any }> = {};
 
@@ -122,13 +216,13 @@ export const compareChanges = (
  */
 interface CreateAuditLogParams {
   userId: string;
-  action: string;
-  entityType: string;
+  action: AuditAction;
+  entityType: AuditEntityType;
   entityId: string;
   description?: string;
-  oldValues?: Record<string, any>;
-  newValues?: Record<string, any>;
-  metadata?: Record<string, any>;
+  oldValues?: Prisma.InputJsonValue;
+  newValues?: Prisma.InputJsonValue;
+  metadata?: Prisma.InputJsonValue;
   severity?: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
   ipAddress?: string;
   userAgent?: string;
@@ -163,7 +257,7 @@ export const createAuditLog = async (
 
     // Auto-calculate severity if not provided
     const finalSeverity =
-      severity || calculateSeverity(action, metadata || newValues);
+      severity || calculateSeverity(action, entityType, metadata);
 
     // Create audit log entry
     await prisma.auditLog.create({
@@ -173,10 +267,10 @@ export const createAuditLog = async (
         entityType,
         entityId,
         description,
-        oldValues: oldValues || null,
-        newValues: newValues || null,
-        changes: changes || null,
-        metadata: metadata || null,
+        oldValues: oldValues ?? Prisma.DbNull,
+        newValues: newValues ?? Prisma.DbNull,
+        changes: changes ?? Prisma.DbNull,
+        metadata: metadata ?? Prisma.DbNull,
         severity: finalSeverity,
         ipAddress,
         userAgent,
@@ -193,12 +287,19 @@ export const createAuditLog = async (
   }
 };
 
+// IP থেকে location detect
+const getLocationFromIP = (ip: string): string | undefined => {
+  const geo = geoip.lookup(ip);
+  if (!geo) return undefined;
+  
+  return `${geo.city || 'Unknown'}, ${geo.country}`;
+};
 /**
  * Helper to create audit log from Express request
  */
 export const createAuditLogFromRequest = async (
   req: Request,
-  params: Omit<CreateAuditLogParams, 'ipAddress' | 'userAgent'>
+  params: Omit<CreateAuditLogParams, 'ipAddress' | 'userAgent' | 'location'>
 ): Promise<void> => {
   const userId = (req as any).user?.id;
 
@@ -212,6 +313,7 @@ export const createAuditLogFromRequest = async (
     userId,
     ipAddress: req.ip,
     userAgent: req.headers['user-agent'],
+    location: getLocationFromIP(req.ip as string),
   });
 };
 
@@ -220,7 +322,7 @@ export const createAuditLogFromRequest = async (
  */
 export const shouldAuditUser = async (
   userId: string,
-  action: string
+  action: AuditAction
 ): Promise<boolean> => {
   try {
     const user = await prisma.user.findUnique({
