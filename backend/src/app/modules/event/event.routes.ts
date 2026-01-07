@@ -27,17 +27,32 @@ router.get('/:id', EventController.getEventById);
  * Protected Routes (Authentication required)
  */
 
-// POST /api/v1/events - Create new event
-router.post('/', checkAuth('HOST', 'ADMIN'), EventController.createEvent);
+// POST /api/v1/events - Create new event (with validation)
+router.post(
+  '/',
+  checkAuth('HOST', 'ADMIN'),
+  validateRequest(EventValidation.createEvent),
+  EventController.createEvent
+);
 
-// PUT /api/v1/events/:id - Update event
-router.put('/:id', checkAuth('HOST', 'ADMIN'), EventController.updateEvent);
+// PUT /api/v1/events/:id - Update event (with validation)
+router.put(
+  '/:id',
+  checkAuth('HOST', 'ADMIN'),
+  validateRequest(EventValidation.updateEvent),
+  EventController.updateEvent
+);
 
 // DELETE /api/v1/events/:id - Delete event
 router.delete('/:id', checkAuth('HOST', 'ADMIN'), EventController.deleteEvent);
 
-// POST /api/v1/events/:id/publish - Publish event
-router.post('/:id/publish', checkAuth('HOST', 'ADMIN'), EventController.publishEvent);
+// POST /api/v1/events/:id/publish - Publish event (with validation)
+router.post(
+  '/:id/publish',
+  checkAuth('HOST', 'ADMIN'),
+  validateRequest(EventValidation.publishEvent),
+  EventController.publishEvent
+);
 
 // POST /api/v1/events/:id/save - Save event to wishlist
 router.post('/:id/save', checkAuth('USER', 'HOST', 'ADMIN'), EventController.saveEvent);

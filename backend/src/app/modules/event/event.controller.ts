@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Request, Response } from 'express';
-import { catchAsync, sendResponse } from '@/shared';
+import httpStatus from "http-status-codes";
+import { catchAsync, sendResponse, AuditAction, AuditEntityType } from '@/shared';
 import { 
   logEventView, 
   logSearch, 
@@ -51,7 +52,7 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
 
   // 4. Send response
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: StatusCodes.OK,
     success: true,
     message: 'Events retrieved successfully',
     meta: result.meta,
@@ -82,7 +83,7 @@ const getEventById = catchAsync(async (req: Request, res: Response) => {
 
   // 4. Send response
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: StatusCodes.OK,
     success: true,
     message: 'Event retrieved successfully',
     data: event,
@@ -92,14 +93,15 @@ const getEventById = catchAsync(async (req: Request, res: Response) => {
 /**
  * Create New Event
  * Tracks: Event creation
+ * Logs: Audit trail for HOST event creation
  */
 const createEvent = catchAsync(async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId; // Required (authenticated)
+  const userId = (req as any).user.userId;
 
-  // 1. Create event
+  // 1. Create event with full validation
   const event = await EventService.createEvent(userId, req.body);
 
-  // 2. Track event creation
+  // 2. Track event creation (Activity Log)
   await logActivity({
     activityType: ActivityType.EVENT_CREATE,
     activityName: 'Event Created',
@@ -113,15 +115,35 @@ const createEvent = catchAsync(async (req: Request, res: Response) => {
       startDate: event.startDate,
       isFree: event.isFree,
       price: event.price,
+      isRecurring: event.isRecurring,
+      recurrencePattern: event.recurrencePattern,
     },
     req,
   });
 
-  // 3. Send response
+  // 3. Create audit log (HOST creates EVENT)
+  await createAuditLogFromRequest(req, {
+    userId,
+    action: AuditAction.CREATE,
+    entityType: AuditEntityType.EVENT,
+    entityId: event.id,
+    description: `Created event: ${event.title}`,
+    newValues: {
+      title: event.title,
+      type: event.type,
+      startDate: event.startDate,
+      price: event.price,
+      status: event.status,
+    },
+  });
+
+  // 4. Send response
   sendResponse(res, {
-    statusCode: 201,
+    statusCode: httpStatus.CREATED,
     success: true,
-    message: 'Event created successfully',
+    message: event.isRecurring 
+      ? 'Recurring event series created successfully'
+      : 'Event created successfully',
     data: event,
   });
 });
@@ -190,9 +212,10 @@ const deleteEvent = catchAsync(async (req: Request, res: Response) => {
 
   // 4. Send response
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: StatusCodes.OK,
     success: true,
     message: 'Event deleted successfully',
+    data: null,
   });
 });
 
@@ -418,8 +441,8 @@ const approveEvent = catchAsync(async (req: Request, res: Response) => {
   // 3. Create audit log
   await createAuditLogFromRequest(req, {
     userId: adminId,
-    action: 'APPROVE',
-    entityType: 'EVENT',
+    action: AuditAction.APPROVE,
+    entityType: AuditEntityType.EVENT,
     entityId: id,
     description: `Approved event: ${event.title}`,
     oldValues: {
@@ -469,8 +492,8 @@ const rejectEvent = catchAsync(async (req: Request, res: Response) => {
   // 3. Create audit log
   await createAuditLogFromRequest(req, {
     userId: adminId,
-    action: 'REJECT',
-    entityType: 'EVENT',
+    action: AuditAction.REJECT,
+    entityType: AuditEntityType.EVENT,
     entityId: id,
     description: `Rejected event: ${result.event.title}`,
     oldValues: {
@@ -524,8 +547,8 @@ const featureEvent = catchAsync(async (req: Request, res: Response) => {
   // 2. Create audit log
   await createAuditLogFromRequest(req, {
     userId: adminId,
-    action: featured ? 'PUBLISH' : 'UNPUBLISH',
-    entityType: 'EVENT',
+    action: featured ? AuditAction.APPROVE : AuditAction.REJECT, // Feature = Approve, Unfeature = Reject
+    entityType: AuditEntityType.EVENT,
     entityId: id,
     description: `${featured ? 'Featured' : 'Unfeatured'} event: ${event.title}`,
     newValues: {
@@ -567,8 +590,8 @@ const suspendEvent = catchAsync(async (req: Request, res: Response) => {
   // 3. Create audit log
   await createAuditLogFromRequest(req, {
     userId: adminId,
-    action: 'SUSPEND',
-    entityType: 'EVENT',
+    action: AuditAction.SUSPEND,
+    entityType: AuditEntityType.EVENT,
     entityId: id,
     description: `Suspended event: ${result.event.title}`,
     oldValues: {
@@ -622,8 +645,8 @@ const adminDeleteEvent = catchAsync(async (req: Request, res: Response) => {
   // 3. Create critical audit log (full event snapshot)
   await createAuditLogFromRequest(req, {
     userId: adminId,
-    action: 'DELETE',
-    entityType: 'EVENT',
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.EVENT,
     entityId: id,
     description: `Deleted event: ${eventBefore.title}`,
     oldValues: {
