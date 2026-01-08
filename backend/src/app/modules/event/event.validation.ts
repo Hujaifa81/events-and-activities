@@ -361,6 +361,45 @@ export const suspendEventSchema = z.object({
   notifyHost: z.boolean().optional().default(true),
 });
 
+/**
+ * Query/Filter Validation (for getAllEvents)
+ */
+export const filterEventSchema = z.object({
+  searchTerm: z.string().optional(),
+  category: z.string().optional(),
+  city: z.string().optional(),
+  country: z.string().optional(),
+  type: z.enum(Object.values(EventType) as [string, ...string[]]).optional(),
+  mode: z.enum(Object.values(EventMode) as [string, ...string[]]).optional(),
+  status: z.string().optional(),
+  visibility: z.enum(Object.values(EventVisibility) as [string, ...string[]]).optional(),
+  
+  isFree: z.string().optional(), // Query params are strings, converted in service
+  minPrice: z.string().optional(),
+  maxPrice: z.string().optional(),
+  
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  
+  hostId: z.string().optional(),
+  tags: z.string().optional(), // Comma-separated string
+  
+  difficultyLevel: z.enum(Object.values(DifficultyLevel) as [string, ...string[]]).optional(),
+  
+  // Geo-spatial search
+  latitude: z.string().optional(),
+  longitude: z.string().optional(),
+  radius: z.string().optional(),
+  
+  includeParentEvents: z.string().optional(),
+  
+  // Pagination
+  page: z.string().optional(),
+  limit: z.string().optional(),
+  sortBy: z.string().optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional(),
+});
+
 export const EventValidation = {
   createEvent: createEventSchema,
   updateEvent: updateEventSchema,
@@ -368,4 +407,5 @@ export const EventValidation = {
   rejectEvent: rejectEventSchema,
   featureEvent: featureEventSchema,
   suspendEvent: suspendEventSchema,
+  filterEvent: filterEventSchema,
 };

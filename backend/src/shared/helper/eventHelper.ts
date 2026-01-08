@@ -8,6 +8,7 @@ import { Event } from '@prisma/client';
 import { ApiError } from '@/app/errors';
 import httpStatus from 'http-status-codes';
 
+
 /**
  * Generate unique slug from title
  */

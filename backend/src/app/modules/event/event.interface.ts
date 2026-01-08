@@ -254,8 +254,8 @@ export interface UpdateEventInput {
 // QUERY FILTERS
 // ============================================
 
-export interface EventFilters {
-  search?: string;
+export interface EventFilterRequest {
+  searchTerm?: string;
   category?: string;
   city?: string;
   country?: string;

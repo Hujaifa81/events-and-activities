@@ -8,26 +8,27 @@ import { EventValidation } from './event.validation';
 const router = express.Router();
 
 /**
- * Public Routes (No authentication required)
+ * ============================================
+ * PUBLIC ROUTES (No Authentication)
+ * ============================================
  */
 
-// GET /api/v1/events - Get all events with filters
+// GET /api/v1/events - Get all events with filters (search, location, category, etc.)
 router.get('/', EventController.getAllEvents);
 
-// GET /api/v1/events/nearby - Get nearby events
-router.get('/nearby', EventController.getNearbyEvents);
-
-// GET /api/v1/events/category/:categoryId - Get events by category
-router.get('/category/:categoryId', EventController.getEventsByCategory);
-
-// GET /api/v1/events/:id - Get single event
+// GET /api/v1/events/:id - Get single event by ID
 router.get('/:id', EventController.getEventById);
 
+// POST /api/v1/events/:id/share - Track event share (no auth required)
+router.post('/:id/share', EventController.shareEvent);
+
 /**
- * Protected Routes (Authentication required)
+ * ============================================
+ * PROTECTED ROUTES (Authentication Required)
+ * ============================================
  */
 
-// POST /api/v1/events - Create new event (with validation)
+// POST /api/v1/events - Create new event (HOST/ADMIN only)
 router.post(
   '/',
   checkAuth('HOST', 'ADMIN'),
@@ -35,7 +36,7 @@ router.post(
   EventController.createEvent
 );
 
-// PUT /api/v1/events/:id - Update event (with validation)
+// PUT /api/v1/events/:id - Update event (HOST/ADMIN only)
 router.put(
   '/:id',
   checkAuth('HOST', 'ADMIN'),
@@ -43,10 +44,14 @@ router.put(
   EventController.updateEvent
 );
 
-// DELETE /api/v1/events/:id - Delete event
-router.delete('/:id', checkAuth('HOST', 'ADMIN'), EventController.deleteEvent);
+// DELETE /api/v1/events/:id - Soft delete event (HOST/ADMIN only)
+router.delete(
+  '/:id',
+  checkAuth('HOST', 'ADMIN'),
+  EventController.deleteEvent
+);
 
-// POST /api/v1/events/:id/publish - Publish event (with validation)
+// POST /api/v1/events/:id/publish - Publish event (HOST/ADMIN only)
 router.post(
   '/:id/publish',
   checkAuth('HOST', 'ADMIN'),
@@ -54,57 +59,100 @@ router.post(
   EventController.publishEvent
 );
 
-// POST /api/v1/events/:id/save - Save event to wishlist
-router.post('/:id/save', checkAuth('USER', 'HOST', 'ADMIN'), EventController.saveEvent);
+// POST /api/v1/events/:id/save - Save event to wishlist (USER/HOST/ADMIN)
+router.post(
+  '/:id/save',
+  checkAuth('USER', 'HOST', 'ADMIN'),
+  EventController.saveEvent
+);
 
-// POST /api/v1/events/:id/share - Share event
-router.post('/:id/share', EventController.shareEvent);
+// DELETE /api/v1/events/:id/unsave - Remove from wishlist (USER/HOST/ADMIN)
+// TODO: Implement EventController.unsaveEvent
+// router.delete(
+//   '/:id/unsave',
+//   checkAuth('USER', 'HOST', 'ADMIN'),
+//   EventController.unsaveEvent
+// );
+
+// GET /api/v1/events/saved/my - Get user's saved events (USER/HOST/ADMIN)
+// TODO: Implement EventController.getMySavedEvents
+// router.get(
+//   '/saved/my',
+//   checkAuth('USER', 'HOST', 'ADMIN'),
+//   EventController.getMySavedEvents
+// );
+
+// GET /api/v1/events/host/my - Get host's own events (HOST/ADMIN)
+// TODO: Implement EventController.getMyEvents
+// router.get(
+//   '/host/my',
+//   checkAuth('HOST', 'ADMIN'),
+//   EventController.getMyEvents
+// );
+
+// POST /api/v1/events/:id/cancel - Cancel event (HOST/ADMIN)
+// TODO: Implement EventController.cancelEvent
+// router.post(
+//   '/:id/cancel',
+//   checkAuth('HOST', 'ADMIN'),
+//   EventController.cancelEvent
+// );
+
+// POST /api/v1/events/:id/duplicate - Duplicate event for reuse (HOST/ADMIN)
+// TODO: Implement EventController.duplicateEvent
+// router.post(
+//   '/:id/duplicate',
+//   checkAuth('HOST', 'ADMIN'),
+//   EventController.duplicateEvent
+// );
 
 /**
- * Admin Routes (Admin/Moderator only)
+ * ============================================
+ * ADMIN ROUTES (Admin/Moderator Only)
+ * ============================================
  */
 
-// GET /api/v1/events/admin/pending - Get pending events
+// GET /api/v1/events/admin/pending - Get pending approval events
 router.get(
   '/admin/pending',
   checkAuth('ADMIN', 'MODERATOR'),
   EventController.getPendingEvents
 );
 
-// PUT /api/v1/events/:id/approve - Approve event
+// PUT /api/v1/events/admin/:id/approve - Approve event
 router.put(
-  '/:id/approve',
+  '/admin/:id/approve',
   checkAuth('ADMIN', 'MODERATOR'),
   EventController.approveEvent
 );
 
-// PUT /api/v1/events/:id/reject - Reject event
+// PUT /api/v1/events/admin/:id/reject - Reject event
 router.put(
-  '/:id/reject',
+  '/admin/:id/reject',
   checkAuth('ADMIN', 'MODERATOR'),
   validateRequest(EventValidation.rejectEvent),
   EventController.rejectEvent
 );
 
-// PUT /api/v1/events/:id/feature - Feature/unfeature event
+// PUT /api/v1/events/admin/:id/feature - Feature/unfeature event
 router.put(
-  '/:id/feature',
+  '/admin/:id/feature',
   checkAuth('ADMIN'),
   validateRequest(EventValidation.featureEvent),
   EventController.featureEvent
 );
 
-// PUT /api/v1/events/:id/suspend - Suspend event
+// PUT /api/v1/events/admin/:id/suspend - Suspend event
 router.put(
-  '/:id/suspend',
+  '/admin/:id/suspend',
   checkAuth('ADMIN', 'MODERATOR'),
   validateRequest(EventValidation.suspendEvent),
   EventController.suspendEvent
 );
 
-// DELETE /api/v1/events/:id/admin - Admin delete (permanent)
+// DELETE /api/v1/events/admin/:id - Admin hard delete
 router.delete(
-  '/:id/admin',
+  '/admin/:id',
   checkAuth('ADMIN', 'SUPER_ADMIN'),
   EventController.adminDeleteEvent
 );

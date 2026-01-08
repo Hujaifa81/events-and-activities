@@ -1,145 +1,216 @@
 // Event Service - Business Logic
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/shared/utils';
 import { ApiError } from '@/app/errors';
-import { CreateEventInput, UpdateEventInput, EventFilters, EventMode, EventVisibility, EventStatus, DifficultyLevel } from './event.interface';
+import { CreateEventInput, UpdateEventInput, EventMode, EventVisibility, EventStatus, DifficultyLevel, EventFilterRequest } from './event.interface';
 import { generateSlug, createRecurringInstances, checkHostAvailability } from '@/shared/helper/eventHelper';
 import httpStatus from "http-status-codes";
+import { IOptions, paginationHelper } from '@/shared';
+import { eventSearchableFields } from './event.constants';
 
+// ============================================
+// CONSTANTS
+// ============================================
 
 
 /**
  * Get all events with filters, pagination, and search
+ * ✅ Traditional Pattern - Production Ready
  */
-const getAllEvents = async (filters: EventFilters) => {
-  const {
-    search,
-    category,
-    city,
-    type,
-    isFree,
-    minPrice,
-    maxPrice,
-    startDate,
-    endDate,
-    includeParentEvents = false, // Default: hide parents (customer view)
-    page = 1,
-    limit = 10,
-    sortBy = 'startDate',
-    sortOrder = 'asc',
+const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
+  // Step 1: Calculate pagination
+  const { limit, page, skip } = paginationHelper.calculatePagination(options);
+  
+  // Step 2: Extract special filters that need custom handling
+  const { 
+    searchTerm,      // OR search across multiple fields
+    category,        // Relation query
+    tags,            // Array field - special handling
+    latitude,        // Geo-spatial search
+    longitude,       // Geo-spatial search
+    radius,          // Geo-spatial search (in km)
+    ...filterData    // Direct fields (status, isFree, etc.)
   } = filters;
 
-  const skip = (Number(page) - 1) * Number(limit);
+  // Step 3: Build AND conditions array
+  const andConditions: Prisma.EventWhereInput[] = [];
 
-  // Build where clause
-  const where: Prisma.EventWhereInput = {
-    status: 'PUBLISHED',
-    deletedAt: null,
-  };
-
-  // Conditionally hide parent events (customer view vs host dashboard)
-  if (!includeParentEvents) {
-    where.OR = [
-      { isRecurring: false },           // Single events
-      { parentEventId: { not: null } }, // Child instances (bookable)
-    ];
+  // Step 4: Add search condition (OR logic)
+  if (searchTerm) {
+    andConditions.push({
+      OR: eventSearchableFields.map((field) => ({
+        [field]: {
+          contains: searchTerm,
+          mode: 'insensitive' as Prisma.QueryMode,
+        },
+      })),
+    });
   }
 
-  // Search in title and description
-  if (search) {
-    where.OR = [
-      { title: { contains: search, mode: 'insensitive' } },
-      { description: { contains: search, mode: 'insensitive' } },
-      { tags: { has: search } },
-    ];
-  }
-
-  // Category filter
+  // Step 5: Category filter (Relation query)
   if (category) {
-    where.category = { slug: category };
+    andConditions.push({
+      category: {
+        slug: category, // Filter by category slug
+      },
+    });
   }
 
-  // Location filter
-  if (city) {
-    where.city = { contains: city, mode: 'insensitive' };
+  // Step 6: Tags filter (Array field with special handling)
+  if (tags && tags.length > 0) {
+    const tagsArray = Array.isArray(tags) ? tags : [tags];
+    
+    andConditions.push({
+      tags: {
+        hasSome: tagsArray, // Has at least one of these tags
+      },
+    });
   }
 
-  // Event type filter
-  if (type) {
-    where.type = type as any;
+  // Step 7: Geo-spatial filter (location-based search)
+  if (latitude !== undefined && longitude !== undefined && radius) {
+    // Get nearby event IDs using Haversine formula
+    const nearbyEvents = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id
+      FROM events
+      WHERE 
+        latitude IS NOT NULL 
+        AND longitude IS NOT NULL
+        AND (
+          6371 * acos(
+            cos(radians(${latitude})) 
+            * cos(radians(latitude)) 
+            * cos(radians(longitude) - radians(${longitude})) 
+            + sin(radians(${latitude})) 
+            * sin(radians(latitude))
+          )
+        ) < ${radius}
+    `;
+
+    const nearbyEventIds = nearbyEvents.map(e => e.id);
+    
+    if (nearbyEventIds.length === 0) {
+      // No events found within radius - return empty result early
+      return {
+        meta: { total: 0, page, limit },
+        data: [],
+      };
+    }
+
+    // Filter by nearby event IDs
+    andConditions.push({
+      id: { in: nearbyEventIds },
+    });
   }
 
-  // Price filters
-  if (isFree !== undefined) {
-    where.isFree = Boolean(isFree);
-  }
-  if (minPrice) {
-    where.price = { gte: Number(minPrice) };
-  }
-  if (maxPrice) {
-    where.price = where.price 
-      ? { ...where.price as object, lte: Number(maxPrice) } 
-      : { lte: Number(maxPrice) };
+  // Step 8: Parent/Child visibility logic
+  if (!filters.includeParentEvents) {
+    // Customer view: Hide parent recurring events (show only bookable instances)
+    andConditions.push({
+      OR: [
+        { isRecurring: false },           // Single events
+        { parentEventId: { not: null } }, // Child instances only
+      ],
+    });
   }
 
-  // Date range filter
-  if (startDate) {
-    where.startDate = { gte: new Date(startDate) };
-  }
-  if (endDate) {
-    where.startDate = where.startDate 
-      ? { ...where.startDate as object, lte: new Date(endDate) } 
-      : { lte: new Date(endDate) };
+  // Step 9: Other direct field filters
+  if (Object.keys(filterData).length > 0) {
+    const filterConditions = Object.entries(filterData)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => {
+        // Handle special cases
+        if (key === 'isFree') {
+          return { [key]: { equals: Boolean(value) } };
+        }
+        
+        // Handle price range
+        if (key === 'minPrice') {
+          return { price: { gte: Number(value) } };
+        }
+        if (key === 'maxPrice') {
+          return { price: { lte: Number(value) } };
+        }
+        
+        // Handle date range
+        if (key === 'startDate') {
+          return { startDate: { gte: new Date(value as string) } };
+        }
+        if (key === 'endDate') {
+          return { startDate: { lte: new Date(value as string) } };
+        }
+        
+        // Default: exact match
+        return { [key]: { equals: value } };
+      });
+    
+    andConditions.push(...filterConditions);
   }
 
-  // Execute query
-  const [events, total] = await Promise.all([
-    prisma.event.findMany({
-      where,
-      skip,
-      take: Number(limit),
-      orderBy: { [sortBy]: sortOrder },
-      include: {
-        host: {
-          select: {
-            id: true,
-            username: true,
-            profile: {
-              select: {
-                displayName: true,
-                avatarUrl: true,
-              },
+  // Step 10: Base conditions (always apply)
+  andConditions.push({
+    status: 'PUBLISHED',  // Only show published events
+    deletedAt: null,      // Exclude soft-deleted
+  });
+
+  // Step 11: Build final WHERE clause
+  const whereConditions: Prisma.EventWhereInput =
+    andConditions.length > 0 ? { AND: andConditions } : {};
+
+  // Step 12: Execute query with relations
+  const result = await prisma.event.findMany({
+    where: whereConditions,
+    skip,
+    take: limit,
+    orderBy:
+      options.sortBy && options.sortOrder
+        ? { [options.sortBy]: options.sortOrder }
+        : { startDate: 'asc' }, // Default: upcoming events first
+    include: {
+      host: {
+        select: {
+          id: true,
+          username: true,
+          profile: {
+            select: {
+              displayName: true,
+              avatarUrl: true,
             },
           },
         },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        _count: {
-          select: {
-            bookings: true,
-            reviews: true,
-          },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          icon: true,
         },
       },
-    }),
-    prisma.event.count({ where }),
-  ]);
-
-  return {
-    data: events,
-    meta: {
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      totalPages: Math.ceil(total / Number(limit)),
+      _count: {
+        select: {
+          bookings: true,
+          reviews: true,
+          participants: true,
+        },
+      },
     },
+  });
+
+  // Step 13: Count total for meta
+  const total = await prisma.event.count({
+    where: whereConditions,
+  });
+
+  // Step 14: Return response with meta
+  return {
+    meta: {
+      total,
+      page,
+      limit,
+    },
+    data: result,
   };
 };
 
@@ -760,8 +831,8 @@ const saveEvent = async (eventId: string, userId: string) => {
 /**
  * Get events by category
  */
-const getEventsByCategory = async (categoryId: string, filters: EventFilters) => {
-  return getAllEvents({ ...filters, category: categoryId });
+const getEventsByCategory = async (categoryId: string, filters: EventFilterRequest, options: IOptions) => {
+  return getAllEvents({ ...filters, category: categoryId }, options);
 };
 
 /**
@@ -842,15 +913,8 @@ const incrementSaveCount = async (id: string) => {
 /**
  * Get pending events (awaiting approval)
  */
-const getPendingEvents = async (filters: EventFilters) => {
-  const {
-    page = 1,
-    limit = 10,
-    sortBy = 'createdAt',
-    sortOrder = 'desc',
-  } = filters;
-
-  const skip = (Number(page) - 1) * Number(limit);
+const getPendingEvents = async (filters: EventFilterRequest, options: IOptions) => {
+  const { limit, page, skip } = paginationHelper.calculatePagination(options);
 
   const where: Prisma.EventWhereInput = {
     status: 'PENDING_APPROVAL',
@@ -861,8 +925,11 @@ const getPendingEvents = async (filters: EventFilters) => {
     prisma.event.findMany({
       where,
       skip,
-      take: Number(limit),
-      orderBy: { [sortBy]: sortOrder },
+      take: limit,
+      orderBy:
+        options.sortBy && options.sortOrder
+          ? { [options.sortBy]: options.sortOrder }
+          : { createdAt: 'desc' },
       include: {
         host: {
           select: {
@@ -892,10 +959,9 @@ const getPendingEvents = async (filters: EventFilters) => {
   return {
     data: events,
     meta: {
-      page: Number(page),
-      limit: Number(limit),
+      page,
+      limit,
       total,
-      totalPages: Math.ceil(total / Number(limit)),
     },
   };
 };

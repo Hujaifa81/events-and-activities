@@ -3,31 +3,34 @@
 
 import { Request, Response } from 'express';
 import httpStatus from "http-status-codes";
-import { catchAsync, sendResponse, AuditAction, AuditEntityType } from '@/shared';
-import { 
-  logEventView, 
-  logSearch, 
-  logActivity 
+import { catchAsync, sendResponse, AuditAction, AuditEntityType, pick } from '@/shared';
+import {
+  logEventView,
+  logSearch,
+  logActivity
 } from '@/shared/helper/activityLogger';
 import { createAuditLogFromRequest } from '@/shared/helper/auditHelper';
 import { EventService } from './event.service';
 import { ActivityType, EntityType } from '@/types';
+import { eventFilterableFields } from '@/app/modules/event/event.constants';
 
 /**
  * Get All Events (with Search & Filters)
  * Tracks: Search queries
  */
 const getAllEvents = catchAsync(async (req: Request, res: Response) => {
-  const { search, category, city } = req.query;
+  const filters = pick(req.query, eventFilterableFields);
+  const options = pick(req.query, ['limit', 'page', 'sortBy', 'sortOrder']);
+
   const userId = (req as any).user?.userId;
 
   // 1. Fetch events
-  const result = await EventService.getAllEvents(req.query);
+  const result = await EventService.getAllEvents(filters, options);
 
   // 2. Track search activity (if search query exists)
-  if (search) {
+  if (filters.searchTerm) {
     logSearch(
-      search as string,
+      filters.searchTerm as string,
       result.data.length,
       req,
       userId
@@ -35,16 +38,16 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
   }
 
   // 3. Track category browsing
-  if (category) {
+  if (filters.category) {
     logActivity({
       activityType: ActivityType.CATEGORY_VIEW,
-      activityName: `Browsed ${category} category`,
+      activityName: `Browsed ${filters.category} category`,
       userId,
       entityType: EntityType.EVENT,
       metadata: {
-        category,
+        category: filters.category,
         resultCount: result.data.length,
-        filters: { city },
+        filters: { city: filters.city, latitude: filters.latitude, longitude: filters.longitude, radius: filters.radius },
       },
       req,
     }).catch(err => console.error('Category tracking failed:', err));
@@ -72,7 +75,7 @@ const getEventById = catchAsync(async (req: Request, res: Response) => {
   const event = await EventService.getEventById(id);
 
   // 2. Track event view (non-blocking)
-  logEventView(id, event.title, req, userId).catch(err => 
+  logEventView(id, event.title, req, userId).catch(err =>
     console.error('Event view tracking failed:', err)
   );
 
@@ -141,7 +144,7 @@ const createEvent = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     statusCode: httpStatus.CREATED,
     success: true,
-    message: event.isRecurring 
+    message: event.isRecurring
       ? 'Recurring event series created successfully'
       : 'Event created successfully',
     data: event,
@@ -161,13 +164,13 @@ const updateEvent = catchAsync(async (req: Request, res: Response) => {
 
   // 2. Track event update
   await logActivity({
-    activityType: ActivityType.EVENT_UPDATE,
+    activityType: ActivityType.EVENT_EDIT,
     activityName: 'Event Updated',
     userId,
     entityType: EntityType.EVENT,
     entityId: id,
     metadata: {
-      title: event.title,
+      title: event?.title,
       updatedFields: Object.keys(req.body),
     },
     req,
@@ -175,7 +178,7 @@ const updateEvent = catchAsync(async (req: Request, res: Response) => {
 
   // 3. Send response
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: httpStatus.OK,
     success: true,
     message: 'Event updated successfully',
     data: event,
