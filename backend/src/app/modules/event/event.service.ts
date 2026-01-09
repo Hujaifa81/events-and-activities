@@ -1,3 +1,4 @@
+
 // Event Service - Business Logic
 
 import { Prisma } from '@prisma/client';
@@ -21,9 +22,9 @@ import { eventSearchableFields } from './event.constants';
 const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
   // Step 1: Calculate pagination
   const { limit, page, skip } = paginationHelper.calculatePagination(options);
-  
+
   // Step 2: Extract special filters that need custom handling
-  const { 
+  const {
     searchTerm,      // OR search across multiple fields
     category,        // Relation query
     tags,            // Array field - special handling
@@ -60,7 +61,7 @@ const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
   // Step 6: Tags filter (Array field with special handling)
   if (tags && tags.length > 0) {
     const tagsArray = Array.isArray(tags) ? tags : [tags];
-    
+
     andConditions.push({
       tags: {
         hasSome: tagsArray, // Has at least one of these tags
@@ -89,7 +90,7 @@ const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
     `;
 
     const nearbyEventIds = nearbyEvents.map(e => e.id);
-    
+
     if (nearbyEventIds.length === 0) {
       // No events found within radius - return empty result early
       return {
@@ -124,7 +125,7 @@ const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
         if (key === 'isFree') {
           return { [key]: { equals: Boolean(value) } };
         }
-        
+
         // Handle price range
         if (key === 'minPrice') {
           return { price: { gte: Number(value) } };
@@ -132,7 +133,7 @@ const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
         if (key === 'maxPrice') {
           return { price: { lte: Number(value) } };
         }
-        
+
         // Handle date range
         if (key === 'startDate') {
           return { startDate: { gte: new Date(value as string) } };
@@ -140,11 +141,11 @@ const getAllEvents = async (filters: EventFilterRequest, options: IOptions) => {
         if (key === 'endDate') {
           return { startDate: { lte: new Date(value as string) } };
         }
-        
+
         // Default: exact match
         return { [key]: { equals: value } };
       });
-    
+
     andConditions.push(...filterConditions);
   }
 
@@ -263,7 +264,7 @@ const getEventById = async (id: string) => {
   });
 
   if (!event) {
-    throw new ApiError(404, 'Event not found');
+    throw new ApiError(httpStatus.NOT_FOUND, 'Event not found');
   }
 
   return event;
@@ -365,34 +366,34 @@ const createEvent = async (hostId: string, data: CreateEventInput) => {
       slug,
       description: data.description,
       shortDescription: data.shortDescription,
-      
+
       // Host
       hostId,
       coHostIds: data.coHostIds || [],
-      
+
       // Category & Type
       type: data.type,
       categoryId: data.categoryId,
       tags: data.tags || [],
-      
+
       // Status & Visibility
       status: EventStatus.DRAFT,
       visibility: data.visibility || EventVisibility.PUBLIC,
-      
+
       // Date & Time
       startDate,
       endDate,
       timezone: data.timezone || 'UTC',
       duration: data.duration,
-      
+
       // Recurring
       isRecurring: data.isRecurring || false,
       recurrencePattern: data.recurrencePattern,
       recurrenceEndDate: data.recurrenceEndDate ? new Date(data.recurrenceEndDate) : null,
-      
+
       // Location
       mode: data.mode,
-      
+
       // Physical
       venue: data.venue,
       address: data.address,
@@ -402,17 +403,17 @@ const createEvent = async (hostId: string, data: CreateEventInput) => {
       postalCode: data.postalCode,
       latitude: data.latitude,
       longitude: data.longitude,
-      
+
       // Virtual
       virtualMeetingUrl: data.virtualMeetingUrl,
       virtualMeetingId: data.virtualMeetingId,
       virtualPassword: data.virtualPassword,
-      
+
       // Media
       bannerImage: data.bannerImage,
       images: data.images || [],
       videoUrl: data.videoUrl,
-      
+
       // Capacity
       minParticipants: data.minParticipants || 2,
       maxParticipants: data.maxParticipants,
@@ -420,12 +421,12 @@ const createEvent = async (hostId: string, data: CreateEventInput) => {
       ageMax: data.ageMax,
       genderPreference: data.genderPreference,
       difficultyLevel: data.difficultyLevel || DifficultyLevel.ALL_LEVELS,
-      
+
       // Requirements
       requiredItems: data.requiredItems || [],
       dresscode: data.dresscode,
       prerequisites: data.prerequisites,
-      
+
       // Pricing
       isFree: data.isFree ?? true,
       price: data.price || 0,
@@ -435,18 +436,18 @@ const createEvent = async (hostId: string, data: CreateEventInput) => {
       groupDiscountEnabled: data.groupDiscountEnabled || false,
       groupDiscountMin: data.groupDiscountMin,
       groupDiscountPercent: data.groupDiscountPercent,
-      
+
       // Refund
       refundPolicy: data.refundPolicy,
       refundDeadline: data.refundDeadline ? new Date(data.refundDeadline) : null,
-      
+
       // Features
       instantBooking: data.instantBooking ?? true,
       requiresApproval: data.requiresApproval || false,
       allowWaitlist: data.allowWaitlist ?? true,
       allowGuestInvites: data.allowGuestInvites || false,
       maxGuestsPerBooking: data.maxGuestsPerBooking || 1,
-      
+
       // SEO
       metaTitle: data.metaTitle,
       metaDescription: data.metaDescription,
@@ -526,7 +527,7 @@ const updateEvent = async (id: string, hostId: string, data: UpdateEventInput) =
   // Protects booked users from schedule changes
   if (!event.isRecurring && (data.startDate || data.endDate)) {
     const bookingCount = await prisma.booking.count({
-      where: { 
+      where: {
         eventId: id,
         status: { notIn: ['CANCELLED', 'REFUNDED'] }
       }
@@ -738,11 +739,11 @@ const deleteEvent = async (id: string, hostId: string) => {
   });
 
   if (!event) {
-    throw new ApiError(404, 'Event not found');
+    throw new ApiError(httpStatus.NOT_FOUND, 'Event not found');
   }
 
   if (event.hostId !== hostId) {
-    throw new ApiError(403, 'Not authorized to delete this event');
+    throw new ApiError(httpStatus.FORBIDDEN, 'Not authorized to delete this event');
   }
 
   // Soft delete
@@ -750,6 +751,87 @@ const deleteEvent = async (id: string, hostId: string) => {
     where: { id },
     data: { deletedAt: new Date() },
   });
+};
+
+/**
+ * Change event status (role-aware, production-grade)
+ * Supports: publish, approve, reject, suspend, cancel, etc.
+ */
+const changeEventStatus = async (
+  id: string,
+  newStatus: EventStatus,
+  actorId: string,
+  actorRole: 'ADMIN' | 'HOST' | 'USER',
+) => {
+  // 1. Fetch event
+  const event = await prisma.event.findUnique({
+    where: { id, deletedAt: null },
+    include: {
+      host: { select: { id: true, username: true, email: true } },
+      category: true,
+      _count: { select: { bookings: true, reviews: true } },
+    },
+  });
+  if (!event) throw new ApiError(httpStatus.NOT_FOUND, 'Event not found');
+
+  // 2. Role-based validation
+  if (actorRole === 'HOST' && event.hostId !== actorId) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Not authorized to change status of this event');
+  }
+  if (actorRole === 'USER') {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Users cannot change event status');
+  }
+
+  // 3. Status transition validation (strict sequential flow)
+  // Define all valid transitions for EventStatus
+  const validTransitions: Record<EventStatus, EventStatus[]> = {
+    DRAFT: [EventStatus.PENDING_APPROVAL, EventStatus.CANCELLED, EventStatus.ARCHIVED],
+    PENDING_APPROVAL: [EventStatus.PUBLISHED, EventStatus.CANCELLED, EventStatus.ARCHIVED],
+    PUBLISHED: [EventStatus.OPEN, EventStatus.FULL, EventStatus.CANCELLED, EventStatus.POSTPONED, EventStatus.COMPLETED, EventStatus.ARCHIVED],
+    OPEN: [EventStatus.FULL, EventStatus.CANCELLED, EventStatus.POSTPONED, EventStatus.COMPLETED, EventStatus.ARCHIVED],
+    FULL: [EventStatus.OPEN, EventStatus.CANCELLED, EventStatus.POSTPONED, EventStatus.COMPLETED, EventStatus.ARCHIVED],
+    POSTPONED: [EventStatus.PUBLISHED, EventStatus.OPEN, EventStatus.CANCELLED, EventStatus.ARCHIVED],
+    CANCELLED: [EventStatus.ARCHIVED],
+    COMPLETED: [EventStatus.ARCHIVED],
+    ARCHIVED: [],
+  };
+
+  if (!validTransitions[event.status]?.includes(newStatus)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Invalid status transition: ${event.status} → ${newStatus}`
+    );
+  }
+
+  // 4. Prepare update data
+  const updateData: Prisma.EventUpdateInput = {
+    status: newStatus,
+  };
+
+  if (newStatus === 'PUBLISHED') updateData.publishedAt = new Date();
+  if (newStatus === 'CANCELLED') updateData.cancelledAt = new Date();
+  if (newStatus === 'COMPLETED') updateData.completedAt = new Date();
+
+  // Only admin can approve (PENDING_APPROVAL → PUBLISHED)
+  if (event.status === EventStatus.PENDING_APPROVAL && newStatus === EventStatus.PUBLISHED && actorRole !== 'ADMIN') {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Only admin can approve and publish events');
+  }
+
+  // 5. Update event
+  const updatedEvent = await prisma.event.update({
+    where: { id },
+    data: updateData,
+    include: {
+      host: { select: { id: true, username: true, email: true } },
+      category: true,
+      _count: { select: { bookings: true, reviews: true } },
+    },
+  });
+
+  // 6. Audit log (call from controller)
+  // Controller should call createAuditLogFromRequest with proper action, old/new status, reason, etc.
+
+  return updatedEvent;
 };
 
 /**
@@ -1186,5 +1268,6 @@ export const EventService = {
   featureEvent,
   suspendEvent,
   adminDeleteEvent,
+  changeEventStatus,
 };
 

@@ -1,3 +1,49 @@
+/**
+ * Change Event Status (production-grade, role-aware)
+ * PATCH /events/:id/status
+ */
+const changeEventStatus = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const user = req.user;
+  const actorId = user?.userId;
+  const actorRole = user?.role as 'ADMIN' | 'HOST' | 'USER';
+
+  if (!status) {
+    throw new ApiError(400, 'Status is required');
+  }
+
+  
+
+  // Call service
+  const updatedEvent = await EventService.changeEventStatus(
+    id,
+    status,
+    actorId,
+    actorRole,
+  );
+
+  // Audit log
+  await createAuditLogFromRequest(req, {
+    userId: actorId,
+    action: AuditAction.UPDATE,
+    entityType: AuditEntityType.EVENT,
+    entityId: id,
+    description: `Changed event status to ${status}}`,
+    oldValues: { status: updatedEvent?.status },
+    newValues: { status },
+    metadata: {
+      
+    },
+  });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: `Event status changed to ${status}`,
+    data: updatedEvent,
+  });
+});
 // Event Controller - Complete Activity Logging Example
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -13,6 +59,8 @@ import { createAuditLogFromRequest } from '@/shared/helper/auditHelper';
 import { EventService } from './event.service';
 import { ActivityType, EntityType } from '@/types';
 import { eventFilterableFields } from '@/app/modules/event/event.constants';
+import { ApiError } from '@/app/errors';
+
 
 /**
  * Get All Events (with Search & Filters)
@@ -40,7 +88,7 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
   // 3. Track category browsing
   if (filters.category) {
     logActivity({
-      activityType: ActivityType.CATEGORY_VIEW,
+      activityType: ActivityType.CATEGORY_BROWSE,
       activityName: `Browsed ${filters.category} category`,
       userId,
       entityType: EntityType.EVENT,
@@ -55,7 +103,7 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
 
   // 4. Send response
   sendResponse(res, {
-    statusCode: StatusCodes.OK,
+    statusCode: httpStatus.OK,
     success: true,
     message: 'Events retrieved successfully',
     meta: result.meta,
@@ -69,13 +117,12 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
  */
 const getEventById = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const userId = (req as any).user?.userId;
 
   // 1. Fetch event details
   const event = await EventService.getEventById(id);
 
   // 2. Track event view (non-blocking)
-  logEventView(id, event.title, req, userId).catch(err =>
+  logEventView(id, event.title, req).catch(err =>
     console.error('Event view tracking failed:', err)
   );
 
@@ -86,7 +133,7 @@ const getEventById = catchAsync(async (req: Request, res: Response) => {
 
   // 4. Send response
   sendResponse(res, {
-    statusCode: StatusCodes.OK,
+    statusCode: httpStatus.OK,
     success: true,
     message: 'Event retrieved successfully',
     data: event,
@@ -213,9 +260,29 @@ const deleteEvent = catchAsync(async (req: Request, res: Response) => {
     req,
   });
 
-  // 4. Send response
+  // 4. Create audit log for deletion (HOST initiated)
+  await createAuditLogFromRequest(req, {
+    userId,
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.EVENT,
+    entityId: id,
+    description: `Deleted event: ${event.title}`,
+    oldValues: {
+      title: event.title,
+      status: event.status,
+      deletedAt: new Date().toISOString(),
+    },
+    metadata: {
+      hostId: event.host.id,
+      deletedBy: userId,
+      bookingCount: event.bookingCount ?? 0,
+    },
+    // severity omitted for auto-calculation
+  });
+
+  // 5. Send response
   sendResponse(res, {
-    statusCode: StatusCodes.OK,
+    statusCode: httpStatus.OK,
     success: true,
     message: 'Event deleted successfully',
     data: null,
@@ -458,7 +525,7 @@ const approveEvent = catchAsync(async (req: Request, res: Response) => {
     },
     metadata: {
       hostId: event.host.id,
-      hostEmail: event.host.email,
+      hostEmail: event.host?.email ?? event.host?.username ?? null,
       eventTitle: event.title,
       category: event.category.name,
     },
@@ -508,7 +575,7 @@ const rejectEvent = catchAsync(async (req: Request, res: Response) => {
     },
     metadata: {
       hostId: result.event.host.id,
-      hostEmail: result.event.host.email,
+      hostEmail: result.event.host?.email ?? result.event.host?.username ?? null,
       eventTitle: result.event.title,
       reason,
       notifyHost,
@@ -607,7 +674,7 @@ const suspendEvent = catchAsync(async (req: Request, res: Response) => {
     },
     metadata: {
       hostId: result.event.host.id,
-      hostEmail: result.event.host.email,
+      hostEmail: result.event.host?.email ?? result.event.host?.username ?? null,
       eventTitle: result.event.title,
       reason,
       suspendUntil,
@@ -660,7 +727,7 @@ const adminDeleteEvent = catchAsync(async (req: Request, res: Response) => {
     },
     metadata: {
       hostId: eventBefore.host.id,
-      hostEmail: eventBefore.host.email,
+      hostEmail: eventBefore.host?.email ?? eventBefore.host?.username ?? null,
       affectedBookings: result.affectedBookings,
       affectedReviews: result.affectedReviews,
       deletedBy: adminId,
@@ -704,4 +771,5 @@ export const EventController = {
   featureEvent,
   suspendEvent,
   adminDeleteEvent,
+  changeEventStatus,
 };
