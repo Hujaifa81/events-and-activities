@@ -1,8 +1,10 @@
 // Cron Jobs Index - Centralized Cron Job Setup
 /* eslint-disable no-console */
 
+
 import { setupStatsCronJobs } from './statsCron';
 import { startSessionCleanupCron } from './sessionCron';
+import { setupEventCronJobs } from './eventCron';
 
 /**
  * Initialize All Cron Jobs
@@ -13,11 +15,15 @@ export function initializeCronJobs() {
   console.log('🚀 Starting Cron Jobs Initialization...');
   console.log('🚀 ==========================================\n');
 
+
   // Stats generation cron jobs
   setupStatsCronJobs();
 
   // Session cleanup cron job
   startSessionCleanupCron();
+
+  // Event featured cleanup cron job
+  setupEventCronJobs();
 
   console.log('\n✅ ==========================================');
   console.log('✅ All Cron Jobs Initialized Successfully!');
@@ -25,4 +31,4 @@ export function initializeCronJobs() {
 }
 
 // Export individual cron setup functions (if needed separately)
-export { setupStatsCronJobs, startSessionCleanupCron };
+export { setupStatsCronJobs, startSessionCleanupCron, setupEventCronJobs };

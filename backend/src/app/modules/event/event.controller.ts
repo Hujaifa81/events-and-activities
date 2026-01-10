@@ -1,55 +1,9 @@
-/**
- * Change Event Status (production-grade, role-aware)
- * PATCH /events/:id/status
- */
-const changeEventStatus = catchAsync(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { status } = req.body;
-  const user = req.user;
-  const actorId = user?.userId;
-  const actorRole = user?.role as 'ADMIN' | 'HOST' | 'USER';
-
-  if (!status) {
-    throw new ApiError(400, 'Status is required');
-  }
-
-  
-
-  // Call service
-  const updatedEvent = await EventService.changeEventStatus(
-    id,
-    status,
-    actorId,
-    actorRole,
-  );
-
-  // Audit log
-  await createAuditLogFromRequest(req, {
-    userId: actorId,
-    action: AuditAction.UPDATE,
-    entityType: AuditEntityType.EVENT,
-    entityId: id,
-    description: `Changed event status to ${status}}`,
-    oldValues: { status: updatedEvent?.status },
-    newValues: { status },
-    metadata: {
-      
-    },
-  });
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    message: `Event status changed to ${status}`,
-    data: updatedEvent,
-  });
-});
 // Event Controller - Complete Activity Logging Example
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Request, Response } from 'express';
 import httpStatus from "http-status-codes";
-import { catchAsync, sendResponse, AuditAction, AuditEntityType, pick } from '@/shared';
+import { catchAsync, sendResponse, AuditEntityType, pick, AuditAction } from '@/shared';
 import {
   logEventView,
   logSearch,
@@ -60,6 +14,7 @@ import { EventService } from './event.service';
 import { ActivityType, EntityType } from '@/types';
 import { eventFilterableFields } from '@/app/modules/event/event.constants';
 import { ApiError } from '@/app/errors';
+import { UserRole } from '@/app/modules/user/user.interface';
 
 
 /**
@@ -70,7 +25,35 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
   const filters = pick(req.query, eventFilterableFields);
   const options = pick(req.query, ['limit', 'page', 'sortBy', 'sortOrder']);
 
-  const userId = (req as any).user?.userId;
+  const user = (req as any).user;
+  const userId = user?.userId;
+  const userRole = user?.role;
+
+  // Restrict status and visibility for non-admins
+  if (userRole !== (UserRole.ADMIN || UserRole.MODERATOR)) {
+    // Exclude restricted statuses
+    const restrictedStatuses = [
+      'DRAFT',
+      'PENDING_APPROVAL',
+      'CANCELLED',
+      'POSTPONED',
+      'ARCHIVED',
+    ];
+    if (!filters.status) {
+      filters.status = 'PUBLISHED'; // Default for users
+    } else if (restrictedStatuses.includes(filters.status as string)) {
+      filters.status = 'PUBLISHED';
+    }
+    // Exclude restricted visibilities
+    const restrictedVisibilities = [
+      'PRIVATE',
+      'INVITE_ONLY',
+      'FOLLOWERS_ONLY',
+    ];
+    if (filters.visibility && restrictedVisibilities.includes(filters.visibility as string)) {
+      filters.visibility = 'PUBLIC';
+    }
+  }
 
   // 1. Fetch events
   const result = await EventService.getAllEvents(filters, options);
@@ -101,7 +84,10 @@ const getAllEvents = catchAsync(async (req: Request, res: Response) => {
     }).catch(err => console.error('Category tracking failed:', err));
   }
 
-  // 4. Send response
+  
+  
+
+  // 5. Send response
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
@@ -206,12 +192,15 @@ const updateEvent = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
   const userId = (req as any).user.userId;
 
-  // 1. Update event
+  // 1. Get event details before update
+  const eventBefore = await EventService.getEventById(id);
+
+  // 2. Update event
   const event = await EventService.updateEvent(id, userId, req.body);
 
-  // 2. Track event update
+  // 3. Track event update (activity log)
   await logActivity({
-    activityType: ActivityType.EVENT_EDIT,
+    activityType: ActivityType.EVENT_UPDATE,
     activityName: 'Event Updated',
     userId,
     entityType: EntityType.EVENT,
@@ -223,7 +212,146 @@ const updateEvent = catchAsync(async (req: Request, res: Response) => {
     req,
   });
 
-  // 3. Send response
+  // 4. Audit log for update (only JSON-serializable fields)
+  const flattenEvent = (ev: any) => {
+    if (!ev) return {};
+    // Only include primitive fields, not relations or objects
+    const {
+      id,
+      title,
+      description,
+      shortDescription,
+      type,
+      categoryId,
+      tags,
+      visibility,
+      startDate,
+      endDate,
+      timezone,
+      duration,
+      mode,
+      venue,
+      address,
+      city,
+      state,
+      country,
+      postalCode,
+      latitude,
+      longitude,
+      bannerImage,
+      images,
+      videoUrl,
+      minParticipants,
+      maxParticipants,
+      ageMin,
+      ageMax,
+      genderPreference,
+      difficultyLevel,
+      requiredItems,
+      dresscode,
+      prerequisites,
+      isFree,
+      price,
+      currency,
+      earlyBirdPrice,
+      earlyBirdEndDate,
+      groupDiscountEnabled,
+      groupDiscountMin,
+      groupDiscountPercent,
+      refundPolicy,
+      refundDeadline,
+      instantBooking,
+      requiresApproval,
+      allowWaitlist,
+      allowGuestInvites,
+      maxGuestsPerBooking,
+      metaTitle,
+      metaDescription,
+      keywords,
+      status,
+      isRecurring,
+      recurrencePattern,
+      recurrenceEndDate,
+      createdAt,
+      updatedAt,
+    } = ev;
+    return {
+      id,
+      title,
+      description,
+      shortDescription,
+      type,
+      categoryId,
+      tags,
+      visibility,
+      startDate,
+      endDate,
+      timezone,
+      duration,
+      mode,
+      venue,
+      address,
+      city,
+      state,
+      country,
+      postalCode,
+      latitude,
+      longitude,
+      bannerImage,
+      images,
+      videoUrl,
+      minParticipants,
+      maxParticipants,
+      ageMin,
+      ageMax,
+      genderPreference,
+      difficultyLevel,
+      requiredItems,
+      dresscode,
+      prerequisites,
+      isFree,
+      price,
+      currency,
+      earlyBirdPrice,
+      earlyBirdEndDate,
+      groupDiscountEnabled,
+      groupDiscountMin,
+      groupDiscountPercent,
+      refundPolicy,
+      refundDeadline,
+      instantBooking,
+      requiresApproval,
+      allowWaitlist,
+      allowGuestInvites,
+      maxGuestsPerBooking,
+      metaTitle,
+      metaDescription,
+      keywords,
+      status,
+      isRecurring,
+      recurrencePattern,
+      recurrenceEndDate,
+      createdAt,
+      updatedAt,
+    };
+  };
+
+  await createAuditLogFromRequest(req, {
+    userId,
+    action: AuditAction.UPDATE,
+    entityType: AuditEntityType.EVENT,
+    entityId: id,
+    description: `Updated event: ${event?.title}`,
+    oldValues: flattenEvent(eventBefore),
+    newValues: flattenEvent(event),
+    metadata: {
+      updatedFields: Object.keys(req.body),
+      hostId: event?.host?.id,
+      hostEmail: event?.host?.email,
+    },
+  });
+
+  // 5. Send response
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
@@ -290,70 +418,123 @@ const deleteEvent = catchAsync(async (req: Request, res: Response) => {
 });
 
 /**
- * Publish Event (Draft → Published)
- * Tracks: Event publishing
+ * Change Event Status (production-grade, role-aware)
+ * PATCH /events/:id/status
  */
-const publishEvent = catchAsync(async (req: Request, res: Response) => {
+const changeEventStatus = catchAsync(async (req: Request, res: Response) => {
+
   const { id } = req.params;
-  const userId = (req as any).user.userId;
+  const { status } = req.body;
+  const user = req.user;
+  const actorId = user?.userId;
+  const actorRole = user?.role as UserRole;
 
-  // 1. Publish event
-  const event = await EventService.publishEvent(id, userId);
+  if (!status) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Status is required');
+  }
 
-  // 2. Track event publishing
-  await logActivity({
-    activityType: ActivityType.EVENT_PUBLISH,
-    activityName: 'Event Published',
-    userId,
-    entityType: EntityType.EVENT,
+  // Fetch event before change for audit
+  const eventBefore = await EventService.getEventById(id);
+
+  const updatedEvent = await EventService.changeEventStatus(
+    id,
+    status,
+    actorId,
+    actorRole,
+  );
+
+  // Determine audit action based on transition
+  let auditAction = AuditAction.UPDATE;
+  if (status === 'PUBLISHED' && eventBefore.status === 'PENDING_APPROVAL') {
+    auditAction = AuditAction.PUBLISHED;
+  } else if (status === 'CANCELLED') {
+    auditAction = AuditAction.CANCELLED;
+  } else if (status === 'POSTPONED') {
+    auditAction = AuditAction.POSTPONED;
+  }
+
+  // Audit log with production-grade metadata
+  await createAuditLogFromRequest(req, {
+    userId: actorId,
+    action: auditAction,
+    entityType: AuditEntityType.EVENT,
     entityId: id,
+    description: `${auditAction === AuditAction.UPDATE ? 'Changed' : auditAction.toLowerCase()} event status from ${eventBefore.status} to ${status}${reason ? `: ${reason}` : ''}`,
+    oldValues: { status: eventBefore.status },
+    newValues: { status: updatedEvent.status },
     metadata: {
-      title: event.title,
-      publishedAt: event.publishedAt,
+      eventId: id,
+      eventTitle: eventBefore.title,
+      category: eventBefore.category?.name,
+      previousStatus: eventBefore.status,
+      newStatus: status,
+      actorId,
+      actorRole,
+      actorEmail: user?.email,
+      affectedBookings: updatedEvent._count?.bookings,
+      affectedParticipants: updatedEvent._count?.participants,
+      
     },
-    req,
   });
 
-  // 3. Send response
+  // TODO: Implement notification later
+  // if (actorRole === 'ADMIN' && notifyHost) {
+  //   await sendNotification(eventBefore.host.id, 'EVENT_STATUS_CHANGED', { ... });
+  // }
+
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: httpStatus.OK,
     success: true,
-    message: 'Event published successfully',
-    data: event,
+    message: `Event status changed to ${status}`,
+    data: updatedEvent,
   });
 });
 
 /**
- * Save Event to Wishlist
- * Tracks: Event saves
+ * Toggle Save/Unsave Event to Wishlist
+ * POST /api/v1/events/:id/save-toggle
  */
-const saveEvent = catchAsync(async (req: Request, res: Response) => {
+const toggleSaveEvent = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const userId = (req as any).user.userId;
+  const userId = req.user.userId;
 
-  // 1. Save event
-  const savedEvent = await EventService.saveEvent(id, userId);
+  const result = await EventService.toggleSaveEvent(id, userId);
 
-  // 2. Track save action
-  await logActivity({
-    activityType: ActivityType.EVENT_SAVE,
-    activityName: 'Event Saved',
-    userId,
-    entityType: EntityType.EVENT,
-    entityId: id,
-    metadata: {
-      title: savedEvent.event.title,
-    },
-    req,
-  });
-
-  // 3. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Event saved to wishlist',
-    data: savedEvent,
-  });
+  if (result.status === 'saved') {
+    await logActivity({
+      activityType: ActivityType.EVENT_SAVE,
+      activityName: 'Event Saved',
+      userId,
+      entityType: EntityType.EVENT,
+      entityId: id,
+      metadata: {
+        title: result?.savedEvent?.event.title,
+      },
+      req,
+    });
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: 'Event saved to wishlist',
+      data: result.savedEvent,
+    });
+  } else {
+    await logActivity({
+      activityType: ActivityType.EVENT_UNSAVE,
+      activityName: 'Event Unsaved',
+      userId,
+      entityType: EntityType.EVENT,
+      entityId: id,
+      metadata: {},
+      req,
+    });
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      success: true,
+      message: 'Event removed from wishlist',
+      data: null,
+    });
+  }
 });
 
 /**
@@ -363,12 +544,17 @@ const saveEvent = catchAsync(async (req: Request, res: Response) => {
 const shareEvent = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
   const { platform } = req.body; // facebook, twitter, whatsapp, etc.
-  const userId = (req as any).user?.userId;
+  const userId = req.user?.userId;
 
   // 1. Get event details
   const event = await EventService.getEventById(id);
 
-  // 2. Track share action
+  // 2. Restrict sharing to public & published events only
+  if (event.status !== 'PUBLISHED' || event.visibility !== 'PUBLIC') {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Only public and published events can be shared');
+  }
+
+  // 3. Track share action
   await logActivity({
     activityType: ActivityType.SHARE,
     activityName: 'Event Shared',
@@ -383,14 +569,14 @@ const shareEvent = catchAsync(async (req: Request, res: Response) => {
     req,
   });
 
-  // 3. Increment share count
+  // 4. Increment share count
   EventService.incrementShareCount(id).catch(err =>
     console.error('Share count update failed:', err)
   );
 
-  // 4. Send response
+  // 5. Send response
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: httpStatus.OK,
     success: true,
     message: 'Event shared successfully',
     data: {
@@ -399,203 +585,11 @@ const shareEvent = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-/**
- * Get Events by Category
- * Tracks: Category browsing
- */
-const getEventsByCategory = catchAsync(async (req: Request, res: Response) => {
-  const { categoryId } = req.params;
-  const userId = (req as any).user?.userId;
-
-  // 1. Fetch events
-  const result = await EventService.getEventsByCategory(categoryId, req.query);
-
-  // 2. Track category view
-  logActivity({
-    activityType: ActivityType.CATEGORY_VIEW,
-    activityName: 'Category Browsed',
-    userId,
-    entityType: EntityType.EVENT,
-    metadata: {
-      categoryId,
-      resultCount: result.data.length,
-    },
-    req,
-  }).catch(err => console.error('Category tracking failed:', err));
-
-  // 3. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Events retrieved successfully',
-    meta: result.meta,
-    data: result.data,
-  });
-});
-
-/**
- * Get Nearby Events (Location-based)
- * Tracks: Location searches
- */
-const getNearbyEvents = catchAsync(async (req: Request, res: Response) => {
-  const { latitude, longitude, radius } = req.query;
-  const userId = (req as any).user?.userId;
-
-  // 1. Fetch nearby events
-  const result = await EventService.getNearbyEvents(
-    Number(latitude),
-    Number(longitude),
-    Number(radius) || 10 // Default 10km
-  );
-
-  // 2. Track location-based search
-  logActivity({
-    activityType: ActivityType.SEARCH,
-    activityName: 'Nearby Events Search',
-    userId,
-    entityType: EntityType.EVENT,
-    metadata: {
-      searchType: 'location',
-      coordinates: { latitude, longitude },
-      radius,
-      resultCount: result.length,
-    },
-    req,
-  }).catch(err => console.error('Location search tracking failed:', err));
-
-  // 3. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Nearby events retrieved successfully',
-    data: result,
-  });
-});
 
 /**
  * ADMIN CONTROLLERS
  */
 
-/**
- * Get Pending Events (Admin Only)
- * No audit log needed - just viewing
- */
-const getPendingEvents = catchAsync(async (req: Request, res: Response) => {
-  // 1. Fetch pending events
-  const result = await EventService.getPendingEvents(req.query);
-
-  // 2. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Pending events retrieved successfully',
-    meta: result.meta,
-    data: result.data,
-  });
-});
-
-/**
- * Approve Event (Admin Only)
- * Creates audit log with before/after states
- */
-const approveEvent = catchAsync(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const adminId = (req as any).user.userId;
-
-  // 1. Get event before approval (for audit log)
-  const eventBefore = await EventService.getEventById(id);
-
-  // 2. Approve event
-  const event = await EventService.approveEvent(id);
-
-  // 3. Create audit log
-  await createAuditLogFromRequest(req, {
-    userId: adminId,
-    action: AuditAction.APPROVE,
-    entityType: AuditEntityType.EVENT,
-    entityId: id,
-    description: `Approved event: ${event.title}`,
-    oldValues: {
-      status: eventBefore.status,
-      publishedAt: eventBefore.publishedAt,
-    },
-    newValues: {
-      status: event.status,
-      publishedAt: event.publishedAt,
-    },
-    metadata: {
-      hostId: event.host.id,
-      hostEmail: event.host?.email ?? event.host?.username ?? null,
-      eventTitle: event.title,
-      category: event.category.name,
-    },
-    severity: 'INFO',
-  });
-
-  // 4. TODO: Send notification to host
-  // await sendNotification(event.host.id, 'EVENT_APPROVED', {...})
-
-  // 5. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Event approved successfully',
-    data: event,
-  });
-});
-
-/**
- * Reject Event (Admin Only)
- * Creates audit log with rejection reason
- */
-const rejectEvent = catchAsync(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { reason, notifyHost = true } = req.body;
-  const adminId = (req as any).user.userId;
-
-  // 1. Get event before rejection
-  const eventBefore = await EventService.getEventById(id);
-
-  // 2. Reject event
-  const result = await EventService.rejectEvent(id, reason);
-
-  // 3. Create audit log
-  await createAuditLogFromRequest(req, {
-    userId: adminId,
-    action: AuditAction.REJECT,
-    entityType: AuditEntityType.EVENT,
-    entityId: id,
-    description: `Rejected event: ${result.event.title}`,
-    oldValues: {
-      status: eventBefore.status,
-    },
-    newValues: {
-      status: result.event.status,
-      rejectionReason: reason,
-    },
-    metadata: {
-      hostId: result.event.host.id,
-      hostEmail: result.event.host?.email ?? result.event.host?.username ?? null,
-      eventTitle: result.event.title,
-      reason,
-      notifyHost,
-    },
-    severity: 'WARNING',
-  });
-
-  // 4. TODO: Send notification to host if requested
-  // if (notifyHost) {
-  //   await sendNotification(result.event.host.id, 'EVENT_REJECTED', { reason })
-  // }
-
-  // 5. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Event rejected successfully',
-    data: result,
-  });
-});
 
 /**
  * Feature Event (Admin Only)
@@ -617,7 +611,7 @@ const featureEvent = catchAsync(async (req: Request, res: Response) => {
   // 2. Create audit log
   await createAuditLogFromRequest(req, {
     userId: adminId,
-    action: featured ? AuditAction.APPROVE : AuditAction.REJECT, // Feature = Approve, Unfeature = Reject
+    action: featured ? AuditAction.FEATURED : AuditAction.NOT_FEATURED, // Feature = Approve, Unfeature = Reject
     entityType: AuditEntityType.EVENT,
     entityId: id,
     description: `${featured ? 'Featured' : 'Unfeatured'} event: ${event.title}`,
@@ -630,71 +624,14 @@ const featureEvent = catchAsync(async (req: Request, res: Response) => {
       eventTitle: event.title,
       hostId: event.host.id,
     },
-    severity: 'INFO',
   });
 
   // 3. Send response
   sendResponse(res, {
-    statusCode: 200,
+    statusCode: httpStatus.OK,
     success: true,
     message: `Event ${featured ? 'featured' : 'unfeatured'} successfully`,
     data: event,
-  });
-});
-
-/**
- * Suspend Event (Admin Only)
- * Temporarily disables event
- */
-const suspendEvent = catchAsync(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { reason, suspendUntil, notifyHost = true } = req.body;
-  const adminId = (req as any).user.userId;
-
-  // 1. Get event before suspension
-  const eventBefore = await EventService.getEventById(id);
-
-  // 2. Suspend event
-  const result = await EventService.suspendEvent(id, reason, suspendUntil);
-
-  // 3. Create audit log
-  await createAuditLogFromRequest(req, {
-    userId: adminId,
-    action: AuditAction.SUSPEND,
-    entityType: AuditEntityType.EVENT,
-    entityId: id,
-    description: `Suspended event: ${result.event.title}`,
-    oldValues: {
-      status: eventBefore.status,
-    },
-    newValues: {
-      status: result.event.status,
-      suspensionReason: reason,
-      suspendUntil,
-    },
-    metadata: {
-      hostId: result.event.host.id,
-      hostEmail: result.event.host?.email ?? result.event.host?.username ?? null,
-      eventTitle: result.event.title,
-      reason,
-      suspendUntil,
-      affectedBookings: result.affectedBookings,
-      notifyHost,
-    },
-    severity:
-      result.affectedBookings > 0 ? 'CRITICAL' : 'WARNING',
-  });
-
-  // 4. TODO: Send notifications
-  // - Notify host
-  // - Notify customers with bookings
-
-  // 5. Send response
-  sendResponse(res, {
-    statusCode: 200,
-    success: true,
-    message: 'Event suspended successfully',
-    data: result,
   });
 });
 
@@ -727,7 +664,7 @@ const adminDeleteEvent = catchAsync(async (req: Request, res: Response) => {
     },
     metadata: {
       hostId: eventBefore.host.id,
-      hostEmail: eventBefore.host?.email ?? eventBefore.host?.username ?? null,
+      hostEmail: eventBefore?.host?.email ?? eventBefore.host?.username ?? null,
       affectedBookings: result.affectedBookings,
       affectedReviews: result.affectedReviews,
       deletedBy: adminId,
@@ -759,17 +696,10 @@ export const EventController = {
   createEvent,
   updateEvent,
   deleteEvent,
-  publishEvent,
-  saveEvent,
+  toggleSaveEvent,
   shareEvent,
-  getEventsByCategory,
-  getNearbyEvents,
   // Admin controllers
-  getPendingEvents,
-  approveEvent,
-  rejectEvent,
   featureEvent,
-  suspendEvent,
   adminDeleteEvent,
   changeEventStatus,
 };

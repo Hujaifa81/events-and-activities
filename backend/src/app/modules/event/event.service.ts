@@ -1,3 +1,7 @@
+/**
+ * Unfeature expired events and normalize featured positions
+ * Call this before fetching featured events or on a schedule (cron)
+ */
 
 // Event Service - Business Logic
 
@@ -9,6 +13,8 @@ import { generateSlug, createRecurringInstances, checkHostAvailability } from '@
 import httpStatus from "http-status-codes";
 import { IOptions, paginationHelper } from '@/shared';
 import { eventSearchableFields } from './event.constants';
+import { UserRole } from '@/app/modules/user/user.interface';
+import { unfeatureExpiredAndNormalizePositions } from '@/app/cron/eventCron';
 
 // ============================================
 // CONSTANTS
@@ -761,7 +767,7 @@ const changeEventStatus = async (
   id: string,
   newStatus: EventStatus,
   actorId: string,
-  actorRole: 'ADMIN' | 'HOST' | 'USER',
+  actorRole: UserRole,
 ) => {
   // 1. Fetch event
   const event = await prisma.event.findUnique({
@@ -778,8 +784,13 @@ const changeEventStatus = async (
   if (actorRole === 'HOST' && event.hostId !== actorId) {
     throw new ApiError(httpStatus.FORBIDDEN, 'Not authorized to change status of this event');
   }
+
   if (actorRole === 'USER') {
     throw new ApiError(httpStatus.FORBIDDEN, 'Users cannot change event status');
+  }
+
+  if(actorRole ==='HOST' &&  newStatus === EventStatus.CANCELLED){
+    throw new ApiError(httpStatus.FORBIDDEN, 'Hosts cannot publish or cancel events');
   }
 
   // 3. Status transition validation (strict sequential flow)
@@ -811,10 +822,15 @@ const changeEventStatus = async (
   if (newStatus === 'PUBLISHED') updateData.publishedAt = new Date();
   if (newStatus === 'CANCELLED') updateData.cancelledAt = new Date();
   if (newStatus === 'COMPLETED') updateData.completedAt = new Date();
+  
 
-  // Only admin can approve (PENDING_APPROVAL → PUBLISHED)
-  if (event.status === EventStatus.PENDING_APPROVAL && newStatus === EventStatus.PUBLISHED && actorRole !== 'ADMIN') {
-    throw new ApiError(httpStatus.FORBIDDEN, 'Only admin can approve and publish events');
+  
+  if (
+    event.status === EventStatus.PENDING_APPROVAL &&
+    newStatus === EventStatus.PUBLISHED &&
+    !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(actorRole)
+  ) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Only admin or moderator can approve and publish events');
   }
 
   // 5. Update event
@@ -824,49 +840,19 @@ const changeEventStatus = async (
     include: {
       host: { select: { id: true, username: true, email: true } },
       category: true,
-      _count: { select: { bookings: true, reviews: true } },
+      _count: { select: { bookings: true, reviews: true, participants:true } },
     },
   });
 
-  // 6. Audit log (call from controller)
-  // Controller should call createAuditLogFromRequest with proper action, old/new status, reason, etc.
 
   return updatedEvent;
 };
 
-/**
- * Publish event
- */
-const publishEvent = async (id: string, hostId: string) => {
-  // Verify ownership
-  const event = await prisma.event.findUnique({
-    where: { id, deletedAt: null },
-  });
-
-  if (!event) {
-    throw new ApiError(404, 'Event not found');
-  }
-
-  if (event.hostId !== hostId) {
-    throw new ApiError(403, 'Not authorized to publish this event');
-  }
-
-  // Publish event
-  const publishedEvent = await prisma.event.update({
-    where: { id },
-    data: {
-      status: 'PUBLISHED',
-      publishedAt: new Date(),
-    },
-  });
-
-  return publishedEvent;
-};
 
 /**
- * Save event to wishlist
+ * Toggle save/unsave event to wishlist
  */
-const saveEvent = async (eventId: string, userId: string) => {
+const toggleSaveEvent = async (eventId: string, userId: string) => {
   // Check if event exists
   await getEventById(eventId);
 
@@ -881,76 +867,41 @@ const saveEvent = async (eventId: string, userId: string) => {
   });
 
   if (existing) {
-    throw new ApiError(400, 'Event already saved');
-  }
-
-  // Save event
-  const savedEvent = await prisma.savedEvent.create({
-    data: {
-      userId,
-      eventId,
-    },
-    include: {
-      event: {
-        select: {
-          id: true,
-          title: true,
-          bannerImage: true,
-          startDate: true,
-          price: true,
-          isFree: true,
+    // Unsave (remove from wishlist)
+    await prisma.savedEvent.delete({
+      where: {
+        userId_eventId: {
+          userId,
+          eventId,
         },
       },
-    },
-  });
-
-  // Increment save count
-  await incrementSaveCount(eventId);
-
-  return savedEvent;
+    });
+    return { status: 'unsaved' };
+  } else {
+    // Save event
+    const savedEvent = await prisma.savedEvent.create({
+      data: {
+        userId,
+        eventId,
+      },
+      include: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            bannerImage: true,
+            startDate: true,
+            price: true,
+            isFree: true,
+          },
+        },
+      },
+    });
+    await incrementSaveCount(eventId);
+    return { status: 'saved', savedEvent };
+  }
 };
 
-/**
- * Get events by category
- */
-const getEventsByCategory = async (categoryId: string, filters: EventFilterRequest, options: IOptions) => {
-  return getAllEvents({ ...filters, category: categoryId }, options);
-};
-
-/**
- * Get nearby events (location-based)
- */
-const getNearbyEvents = async (
-  latitude: number,
-  longitude: number,
-  radiusKm: number
-) => {
-  // Using raw query for geo-spatial search
-  const events = await prisma.$queryRaw`
-    SELECT 
-      e.*,
-      (
-        6371 * acos(
-          cos(radians(${latitude})) 
-          * cos(radians(e.latitude)) 
-          * cos(radians(e.longitude) - radians(${longitude})) 
-          + sin(radians(${latitude})) 
-          * sin(radians(e.latitude))
-        )
-      ) AS distance
-    FROM events e
-    WHERE 
-      e.latitude IS NOT NULL 
-      AND e.longitude IS NOT NULL
-      AND e.status = 'PUBLISHED'
-      AND e."deletedAt" IS NULL
-    HAVING distance < ${radiusKm}
-    ORDER BY distance ASC
-    LIMIT 50
-  `;
-
-  return events;
-};
 
 /**
  * Increment view count
@@ -992,229 +943,93 @@ const incrementSaveCount = async (id: string) => {
  * ADMIN ACTIONS
  */
 
-/**
- * Get pending events (awaiting approval)
- */
-const getPendingEvents = async (filters: EventFilterRequest, options: IOptions) => {
-  const { limit, page, skip } = paginationHelper.calculatePagination(options);
 
-  const where: Prisma.EventWhereInput = {
-    status: 'PENDING_APPROVAL',
-    deletedAt: null,
-  };
-
-  const [events, total] = await Promise.all([
-    prisma.event.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy:
-        options.sortBy && options.sortOrder
-          ? { [options.sortBy]: options.sortOrder }
-          : { createdAt: 'desc' },
-      include: {
-        host: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            profile: {
-              select: {
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-      },
-    }),
-    prisma.event.count({ where }),
-  ]);
-
-  return {
-    data: events,
-    meta: {
-      page,
-      limit,
-      total,
-    },
-  };
-};
-
-/**
- * Approve event (Admin only)
- */
-const approveEvent = async (id: string) => {
-  const event = await prisma.event.findUnique({
-    where: { id, deletedAt: null },
-  });
-
-  if (!event) {
-    throw new ApiError(404, 'Event not found');
-  }
-
-  if (event.status !== 'PENDING_APPROVAL') {
-    throw new ApiError(400, 'Event is not pending approval');
-  }
-
-  const approvedEvent = await prisma.event.update({
-    where: { id },
-    data: {
-      status: 'PUBLISHED',
-      publishedAt: new Date(),
-    },
-    include: {
-      host: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-        },
-      },
-      category: true,
-    },
-  });
-
-  return approvedEvent;
-};
-
-/**
- * Reject event (Admin only)
- */
-const rejectEvent = async (id: string, reason: string) => {
-  const event = await prisma.event.findUnique({
-    where: { id, deletedAt: null },
-  });
-
-  if (!event) {
-    throw new ApiError(404, 'Event not found');
-  }
-
-  // Update event status and store rejection reason in metadata
-  const rejectedEvent = await prisma.event.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      cancelledAt: new Date(),
-    },
-    include: {
-      host: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-        },
-      },
-      category: true,
-    },
-  });
-
-  return { event: rejectedEvent, reason };
-};
 
 /**
  * Feature event on homepage (Admin only)
  * TODO: Implement feature event functionality
  * Future parameters: featured (boolean), featuredUntil (string), position (number)
  */
-const featureEvent = async (id: string) => {
-  const event = await prisma.event.findUnique({
-    where: { id, deletedAt: null },
-  });
 
-  if (!event) {
-    throw new ApiError(404, 'Event not found');
-  }
-
-  if (event.status !== 'PUBLISHED') {
-    throw new ApiError(400, 'Only published events can be featured');
-  }
-
-  // Update event (Note: You may need to add featured fields to Event model)
-  const featuredEvent = await prisma.event.update({
-    where: { id },
-    data: {
-      // Add these fields to your Event schema if not present
-      // featured,
-      // featuredUntil: featuredUntil ? new Date(featuredUntil) : null,
-      // featuredPosition: position,
-    },
-    include: {
-      host: {
-        select: {
-          id: true,
-          username: true,
-        },
-      },
-      category: true,
-    },
-  });
-
-  return featuredEvent;
-};
-
-/**
- * Suspend event (Admin only)
- */
-const suspendEvent = async (
+const featureEvent = async (
   id: string,
-  reason: string,
-  suspendUntil?: string
+  featured: boolean,
+  featuredUntil?: Date | string,
+  position?: number
 ) => {
   const event = await prisma.event.findUnique({
     where: { id, deletedAt: null },
     include: {
-      _count: {
-        select: {
-          bookings: true,
-        },
-      },
+      host: { select: { id: true, username: true, email: true } },
+      category: true,
     },
   });
 
   if (!event) {
-    throw new ApiError(404, 'Event not found');
+    throw new ApiError(httpStatus.NOT_FOUND, 'Event not found');
   }
 
-  // Update event to suspended status
-  const suspendedEvent = await prisma.event.update({
+  // Only published events can be featured
+  if (featured && event.status !== 'PUBLISHED') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Only published events can be featured');
+  }
+
+  // If unfeaturing, clear featuredUntil/position
+  if (!featured) {
+    const updated = await prisma.event.update({
+      where: { id },
+      data: {
+        featured: false,
+        featuredUntil: null,
+        featuredPosition: null,
+      },
+      include: {
+        host: { select: { id: true, username: true, email: true } },
+        category: true,
+      },
+    });
+    // Normalize positions after manual unfeature
+    await unfeatureExpiredAndNormalizePositions();
+    return updated;
+  }
+
+  // If featuring, handle position conflicts
+  if (typeof position === 'number') {
+    // Find all featured events with position >= requested position
+    const conflictingEvents = await prisma.event.findMany({
+      where: {
+        featured: true,
+        featuredPosition: { gte: position },
+        deletedAt: null,
+        id: { not: id },
+      },
+      orderBy: { featuredPosition: 'asc' },
+    });
+
+    // Shift positions of conflicting events up by 1
+    for (let i = conflictingEvents.length - 1; i >= 0; i--) {
+      const e = conflictingEvents[i];
+      await prisma.event.update({
+        where: { id: e.id },
+        data: { featuredPosition: (e.featuredPosition ?? 0) + 1 },
+      });
+    }
+  }
+
+  // Now update the target event
+  return prisma.event.update({
     where: { id },
     data: {
-      status: 'CANCELLED', // Or add SUSPENDED status to EventStatus enum
-      cancelledAt: new Date(),
+      featured: true,
+      featuredUntil: featuredUntil ? new Date(featuredUntil) : null,
+      featuredPosition: position ?? null,
     },
     include: {
-      host: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-        },
-      },
+      host: { select: { id: true, username: true, email: true } },
       category: true,
-      _count: {
-        select: {
-          bookings: true,
-        },
-      },
     },
   });
-
-  return {
-    event: suspendedEvent,
-    reason,
-    suspendUntil,
-    affectedBookings: suspendedEvent._count.bookings,
-  };
 };
-
 /**
  * Admin delete event (hard delete with audit)
  */
@@ -1232,7 +1047,7 @@ const adminDeleteEvent = async (id: string) => {
   });
 
   if (!event) {
-    throw new ApiError(404, 'Event not found');
+    throw new ApiError(httpStatus.NOT_FOUND, 'Event not found');
   }
 
   // Soft delete (preserve data for audit)
@@ -1254,20 +1069,14 @@ export const EventService = {
   createEvent,
   updateEvent,
   deleteEvent,
-  publishEvent,
-  saveEvent,
-  getEventsByCategory,
-  getNearbyEvents,
+  toggleSaveEvent,
   incrementViewCount,
   incrementShareCount,
   incrementSaveCount,
   // Admin methods
-  getPendingEvents,
-  approveEvent,
-  rejectEvent,
   featureEvent,
-  suspendEvent,
   adminDeleteEvent,
   changeEventStatus,
+  unfeatureExpiredAndNormalizePositions,
 };
 

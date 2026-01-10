@@ -311,27 +311,6 @@ export const updateEventSchema = z.object({
   });
 
 /**
- * Publish Event Validation
- */
-export const publishEventSchema = z.object({
-  params: z.object({
-    id: uuidSchema(),
-  }),
-});
-
-/**
- * Reject Event Validation
- */
-export const rejectEventSchema = z.object({
-  reason: z
-    .string({ message: 'Rejection reason is required' })
-    .min(10, 'Reason must be at least 10 characters')
-    .max(500, 'Reason must not exceed 500 characters'),
-  
-  notifyHost: z.boolean().optional().default(true),
-});
-
-/**
  * Feature Event Validation
  */
 export const featureEventSchema = z.object({
@@ -350,16 +329,6 @@ export const featureEventSchema = z.object({
 /**
  * Suspend Event Validation
  */
-export const suspendEventSchema = z.object({
-  reason: z
-    .string({ message: 'Suspension reason is required' })
-    .min(10, 'Reason must be at least 10 characters')
-    .max(500, 'Reason must not exceed 500 characters'),
-  
-  suspendUntil: z.string().optional(),
-  
-  notifyHost: z.boolean().optional().default(true),
-});
 
 /**
  * Query/Filter Validation (for getAllEvents)
@@ -400,12 +369,19 @@ export const filterEventSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).optional(),
 });
 
+/**
+ * Change Event Status Validation
+ */
+export const changeEventStatusSchema = z.object({
+  status: z.enum(['DRAFT', 'PENDING_APPROVAL', 'PUBLISHED', 'OPEN', 'FULL', 'CANCELLED', 'POSTPONED', 'SUSPENDED', 'COMPLETED', 'ARCHIVED'], {
+    message: 'Invalid status'
+  }),
+});
+
 export const EventValidation = {
   createEvent: createEventSchema,
   updateEvent: updateEventSchema,
-  publishEvent: publishEventSchema,
-  rejectEvent: rejectEventSchema,
   featureEvent: featureEventSchema,
-  suspendEvent: suspendEventSchema,
+  changeEventStatus: changeEventStatusSchema,
   filterEvent: filterEventSchema,
 };

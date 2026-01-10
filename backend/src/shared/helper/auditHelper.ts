@@ -3,6 +3,8 @@ import { Request } from 'express';
 import { prisma } from '@/shared/utils/prisma';
 import { UserRole, Prisma, AuditAction, AuditEntityType } from '@prisma/client';
 import geoip from 'geoip-lite';
+
+
 /**
  * ============================================
  * AUDIT LOGGING SYSTEM - Implementation Guide
@@ -106,7 +108,7 @@ const AUDIT_ACTIONS = {
 
   // Host = Business-critical actions (by entity type)
   HOST: {
-    [AuditEntityType.EVENT]: [AuditAction.CREATE, AuditAction.DELETE, AuditAction.UPDATE],
+    [AuditEntityType.EVENT]: [AuditAction.CREATE, AuditAction.DELETE, AuditAction.UPDATE,AuditAction.PUBLISHED, AuditAction.CANCELLED, AuditAction.POSTPONED],
     [AuditEntityType.PAYMENT]: [AuditAction.CREATE],
     [AuditEntityType.USER]: [AuditAction.DELETE, AuditAction.VERIFY],
   },
@@ -163,24 +165,28 @@ export const calculateSeverity = (
 ): 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' => {
   // CRITICAL - Legal/Financial/Security Risk
   if (action === AuditAction.DELETE && entityType === AuditEntityType.USER) return 'CRITICAL';
-  if (action === AuditAction.DELETE && entityType === AuditEntityType.EVENT && metadata?.bookingCount > 0)
+  if (action === AuditAction.DELETE && entityType === AuditEntityType.EVENT && (metadata?.bookingCount ?? 0) > 0)
     return 'CRITICAL';
-  if (action === AuditAction.BAN || action === AuditAction.SUSPEND) return 'CRITICAL';
-  if (action === AuditAction.LOGIN && metadata?.failedAttempts >= 3) return 'CRITICAL';
+  if (action === AuditAction.BAN) return 'CRITICAL';
+  if (action === AuditAction.POSTPONED && (metadata?.affectedBookings ?? 0) > 0) return 'CRITICAL'; // Postponement with bookings
+  if (action === AuditAction.REJECT && entityType === AuditEntityType.EVENT && (metadata?.affectedBookings ?? 0) > 0)
+    return 'CRITICAL'; // Rejecting event with bookings
+  if (action === AuditAction.LOGIN && (metadata?.failedAttempts ?? 0) >= 3) return 'CRITICAL';
   if (action === AuditAction.LOGIN && metadata?.suspiciousLocation) return 'CRITICAL';
 
   // WARNING - Business Impact
   if (action === AuditAction.DELETE && entityType === AuditEntityType.BOOKING) return 'WARNING';
-  if (action === AuditAction.DELETE && entityType === AuditEntityType.EVENT) return 'WARNING';
-  if (action === AuditAction.REJECT) return 'WARNING';
-  if (action === AuditAction.UPDATE && entityType === AuditEntityType.EVENT && metadata?.priceIncreasePercent > 20)
+  if (action === AuditAction.CANCELLED) return 'WARNING';
+  if (action === AuditAction.POSTPONED) return 'WARNING'; // Postponement without bookings
+  if (action === AuditAction.REJECT && entityType === AuditEntityType.EVENT) return 'WARNING'; // Rejecting event without bookings
+  if (action === AuditAction.UPDATE && entityType === AuditEntityType.EVENT && (metadata?.priceIncreasePercent ?? 0) > 20)
     return 'WARNING';
   if (action === AuditAction.CREATE && entityType === AuditEntityType.REPORT) return 'WARNING';
   if (action === AuditAction.CREATE && entityType === AuditEntityType.REFUND) return 'WARNING';
   if (action === AuditAction.RESTORE) return 'WARNING';
 
   // INFO - Normal Operations
-  return 'INFO'; // LOGIN, LOGOUT, VERIFY, CREATE, UPDATE, etc.
+  return 'INFO'; // LOGIN, LOGOUT, VERIFY, CREATE, UPDATE, APPROVE, etc.
 };
 
 /**

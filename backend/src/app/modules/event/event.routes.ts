@@ -51,20 +51,20 @@ router.delete(
   EventController.deleteEvent
 );
 
-// POST /api/v1/events/:id/publish - Publish event (HOST/ADMIN only)
-router.post(
-  '/:id/publish',
+// PATCH /api/v1/events/:id/status - Change event status (role-aware)
+router.patch(
+  '/:id/status',
   checkAuth('HOST', 'ADMIN'),
-  validateRequest(EventValidation.publishEvent),
-  EventController.publishEvent
+  validateRequest(EventValidation.changeEventStatus),
+  EventController.changeEventStatus
 );
 
 // POST /api/v1/events/:id/save - Save event to wishlist (USER/HOST/ADMIN)
-router.post(
-  '/:id/save',
-  checkAuth('USER', 'HOST', 'ADMIN'),
-  EventController.saveEvent
-);
+// router.post(
+//   '/:id/save',
+//   checkAuth('USER', 'HOST', 'ADMIN'),
+//   EventController.saveEvent
+// );
 
 // DELETE /api/v1/events/:id/unsave - Remove from wishlist (USER/HOST/ADMIN)
 // TODO: Implement EventController.unsaveEvent
@@ -73,6 +73,13 @@ router.post(
 //   checkAuth('USER', 'HOST', 'ADMIN'),
 //   EventController.unsaveEvent
 // );
+
+// POST /api/v1/events/:id/save-toggle - Save or unsave event to wishlist (USER/HOST/ADMIN)
+router.post(
+  '/:id/save-toggle',
+  checkAuth('USER', 'HOST', 'ADMIN'),
+  EventController.toggleSaveEvent
+);
 
 // GET /api/v1/events/saved/my - Get user's saved events (USER/HOST/ADMIN)
 // TODO: Implement EventController.getMySavedEvents
@@ -119,20 +126,20 @@ router.get(
   EventController.getPendingEvents
 );
 
-// PUT /api/v1/events/admin/:id/approve - Approve event
-router.put(
-  '/admin/:id/approve',
-  checkAuth('ADMIN', 'MODERATOR'),
-  EventController.approveEvent
-);
+// PUT /api/v1/events/admin/:id/approve - Approve event (DEPRECATED: Use PATCH /events/:id/status)
+// router.put(
+//   '/admin/:id/approve',
+//   checkAuth('ADMIN', 'MODERATOR'),
+//   EventController.approveEvent
+// );
 
-// PUT /api/v1/events/admin/:id/reject - Reject event
-router.put(
-  '/admin/:id/reject',
-  checkAuth('ADMIN', 'MODERATOR'),
-  validateRequest(EventValidation.rejectEvent),
-  EventController.rejectEvent
-);
+// PUT /api/v1/events/admin/:id/reject - Reject event (DEPRECATED: Use PATCH /events/:id/status)
+// router.put(
+//   '/admin/:id/reject',
+//   checkAuth('ADMIN', 'MODERATOR'),
+//   validateRequest(EventValidation.rejectEvent),
+//   EventController.rejectEvent
+// );
 
 // PUT /api/v1/events/admin/:id/feature - Feature/unfeature event
 router.put(
@@ -142,13 +149,13 @@ router.put(
   EventController.featureEvent
 );
 
-// PUT /api/v1/events/admin/:id/suspend - Suspend event
-router.put(
-  '/admin/:id/suspend',
-  checkAuth('ADMIN', 'MODERATOR'),
-  validateRequest(EventValidation.suspendEvent),
-  EventController.suspendEvent
-);
+// PUT /api/v1/events/admin/:id/suspend - Suspend event (DEPRECATED: Use PATCH /events/:id/status)
+// router.put(
+//   '/admin/:id/suspend',
+//   checkAuth('ADMIN', 'MODERATOR'),
+//   validateRequest(EventValidation.suspendEvent),
+//   EventController.suspendEvent
+// );
 
 // DELETE /api/v1/events/admin/:id - Admin hard delete
 router.delete(

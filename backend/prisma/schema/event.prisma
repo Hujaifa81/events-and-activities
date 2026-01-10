@@ -99,6 +99,11 @@ model Event {
   allowWaitlist      Boolean         @default(true)
   allowGuestInvites  Boolean         @default(false)
   maxGuestsPerBooking Int            @default(1)
+
+  // Featured Events
+  featured           Boolean         @default(false)
+  featuredUntil      DateTime?
+  featuredPosition   Int?
   
   // SEO
   metaTitle          String?

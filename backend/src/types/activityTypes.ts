@@ -24,13 +24,15 @@ export enum ActivityType {
   // ============================================
   EVENT_VIEW = 'EVENT_VIEW',
   EVENT_CREATE = 'EVENT_CREATE',
-  EVENT_EDIT = 'EVENT_EDIT',
+  EVENT_UPDATE = 'EVENT_UPDATE',
   EVENT_DELETE = 'EVENT_DELETE',
   EVENT_PUBLISH = 'EVENT_PUBLISH',
   EVENT_UNPUBLISH = 'EVENT_UNPUBLISH',
   EVENT_SHARE = 'EVENT_SHARE',
   EVENT_FAVORITE = 'EVENT_FAVORITE',
   EVENT_UNFAVORITE = 'EVENT_UNFAVORITE',
+  EVENT_SAVE = 'EVENT_SAVE',
+  EVENT_UNSAVE = 'EVENT_UNSAVE',
   EVENT_REPORT = 'EVENT_REPORT',
 
   // ============================================
@@ -149,7 +151,7 @@ export const ActivityCategories = {
   EVENT: [
     ActivityType.EVENT_VIEW,
     ActivityType.EVENT_CREATE,
-    ActivityType.EVENT_EDIT,
+    ActivityType.EVENT_UPDATE,
     ActivityType.EVENT_DELETE,
     ActivityType.EVENT_PUBLISH,
     ActivityType.EVENT_SHARE,
